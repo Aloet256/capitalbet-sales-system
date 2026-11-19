@@ -1,0 +1,20 @@
+{
+  "name": "capitalbet-sales-system",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node server.mjs --demo",
+    "dev:supabase": "node server.mjs --supabase --local",
+    "setup:supabase": "node supabase/setup.mjs",
+    "start": "node server.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.2",
+    "pg": "^8.23.1"
+  }
+}
