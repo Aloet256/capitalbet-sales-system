@@ -31,7 +31,7 @@ The `capitalbet` function only accepts browser requests from `https://aloet256.g
 
 ### Telegram notifications
 
-Set `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and a randomly generated `CAPITALBET_CRON_SECRET` in Edge Function Secrets. Create two Supabase Vault secrets for scheduled retries. Set `capitalbet_function_url` to the project URL followed by `/functions/v1/capitalbet/cron/telegram` and `capitalbet_cron_secret` to the same cron secret. Run [the Telegram schedule](supabase/schedule-telegram.sql) in the Supabase SQL Editor. The app attempts delivery as sales arrive, and Supabase Cron retries pending alerts every minute.
+Set `CAPITALBET_TELEGRAM_BOT_TOKEN`, `CAPITALBET_TELEGRAM_CHAT_ID`, and a randomly generated `CAPITALBET_CRON_SECRET` in Edge Function Secrets. Create two Supabase Vault secrets for scheduled retries. Set `capitalbet_function_url` to the project URL followed by `/functions/v1/capitalbet/cron/telegram` and `capitalbet_cron_secret` to the same cron secret. Run [the Telegram schedule](supabase/schedule-telegram.sql) in the Supabase SQL Editor. The app attempts delivery as sales arrive, and Supabase Cron retries pending alerts every minute.
 
 ## Tests
 

@@ -8,7 +8,7 @@ import { deliverTelegram } from '../../../telegram.mjs';
 declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
 const origin = Deno.env.get('CAPITALBET_SITE_ORIGIN') ?? 'https://aloet256.github.io';
-const telegram = { token: Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '', chatId: Deno.env.get('TELEGRAM_CHAT_ID') ?? '' };
+const telegram = { token: Deno.env.get('CAPITALBET_TELEGRAM_BOT_TOKEN') ?? '', chatId: Deno.env.get('CAPITALBET_TELEGRAM_CHAT_ID') ?? '' };
 const notificationsEnabled = Boolean(telegram.token && telegram.chatId);
 const pool = makePool({ connectionString: Deno.env.get('SUPABASE_DB_URL'), max: 1, connectionTimeoutMillis: 8000, idleTimeoutMillis: 3000 });
 let application: ReturnType<typeof initialize> | undefined;
