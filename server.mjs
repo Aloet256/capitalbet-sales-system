@@ -13,7 +13,6 @@ import { startTelegramWorker } from './telegram.mjs';
 import { daysInMonth, isRegister, registers, validMonth } from './public/sales.mjs';
 
 const lifetime = 12 * 60 * 60 * 1000;
-const demoPassword = 'CapitalbetDemo!2026';
 const loopbacks = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 export { hashSecret } from './credentials.mjs';
 
@@ -71,30 +70,38 @@ const staticFiles = new Map(Object.entries({
 }));
 const pages = new Set(['/', '/dashboard', '/slots', '/live', '/admin', '/admin/login', '/admin/forgot-password', '/admin/branches']);
 
-export async function createApplication({ filename, demo = false, adminPassword, initialAdminPassword, tls, trustProxy = false,
-  publicOrigin, store: configuredStore, pinVault, adminAuth, passwordRecovery = Boolean(adminAuth), telegram } = {}) {
-  if (!configuredStore && !demo && adminPassword && (adminPassword.length < 14 || adminPassword.length > 256 || adminPassword === demoPassword)) {
+export async function createApplication({ filename, local = false, adminPassword, initialAdminPassword, initialBranchPin, tls, trustProxy = false,
+  proxyIps = [], publicOrigin, store: configuredStore, pinVault, adminAuth, passwordRecovery = Boolean(adminAuth), telegram } = {}) {
+  if (!configuredStore && !local && adminPassword && (adminPassword.length < 14 || adminPassword.length > 256)) {
     throw new Error('Choose a unique production administrator password with 14 to 256 characters.');
   }
-  if (!demo && !tls && (!trustProxy || !publicOrigin?.startsWith('https://'))) {
+  if (publicOrigin) {
+    const canonical = new URL(publicOrigin);
+    if (canonical.protocol !== 'https:' || canonical.origin !== publicOrigin || canonical.username || canonical.password) {
+      throw new Error('CAPITALBET_PUBLIC_ORIGIN must be an HTTPS origin with no path or credentials.');
+    }
+  }
+  if (!local && !tls && (!trustProxy || !publicOrigin)) {
     throw new Error('Configure TLS or a loopback reverse proxy with a CAPITALBET_PUBLIC_ORIGIN HTTPS URL.');
   }
-  const [adminHash, demoPinHash, dummyHash] = await Promise.all([
-    !configuredStore && (demo || adminPassword) ? hashSecret(demo ? demoPassword : adminPassword) : null,
-    !configuredStore && demo ? hashSecret('1234') : null,
+  const adminSeed = local ? initialAdminPassword ?? adminPassword : adminPassword;
+  const [adminHash, initialPinHash, dummyHash] = await Promise.all([
+    !configuredStore && adminSeed ? hashSecret(adminSeed) : null,
+    !configuredStore && local && initialBranchPin ? hashSecret(initialBranchPin) : null,
     hashSecret(randomBytes(20).toString('hex')),
   ]);
   const notifyOnSave = Boolean(telegram?.token && telegram?.chatId);
-  const store = configuredStore ?? openStore(filename ?? resolve('data', demo ? 'demo.sqlite' : 'production.sqlite'), { demo, adminHash, demoPinHash, notifyOnSave });
-  if (!configuredStore && initialAdminPassword && pinVault) store.initializeAdmin(await hashSecret(initialAdminPassword));
+  const store = configuredStore ?? openStore(filename ?? resolve('data', local ? 'demo.sqlite' : 'production.sqlite'), { local, adminHash, initialPinHash, notifyOnSave });
+  if (!configuredStore && local && initialAdminPassword && pinVault) store.initializeAdmin(adminHash);
   if (!configuredStore && pinVault) {
     const protections = await Promise.all(store.unsealedBranches().map(async branch => ({ id: branch.id, ...await pinVault.protect(branch.name) })));
     store.initializePins(protections);
   }
   const delivery = startTelegramWorker(store, telegram);
-  const pinLength = demo && !pinVault ? 4 : 6;
-  const cookie = !demo ? '__Host-capitalbet' : configuredStore ? 'capitalbet_cloud_preview' : 'capitalbet_demo';
-  const recoveryCookie = demo ? 'capitalbet_recovery' : '__Host-capitalbet-recovery';
+  const pinLength = initialPinHash && !pinVault ? 4 : 6;
+  const cookie = !local ? '__Host-capitalbet' : configuredStore ? 'capitalbet_cloud_preview' : 'capitalbet_local';
+  const recoveryCookie = local ? 'capitalbet_recovery' : '__Host-capitalbet-recovery';
+  const proxyAddresses = new Set([...loopbacks, ...proxyIps]);
   const attempts = new Map();
   const resetGrants = new Map();
 
@@ -119,11 +126,11 @@ export async function createApplication({ filename, demo = false, adminPassword,
   }
 
   function sessionCookie(response, token, clear = false) {
-    response.setHeader('Set-Cookie', `${cookie}=${token}; Path=/; HttpOnly; SameSite=Strict${demo ? '' : '; Secure'}${clear ? '; Max-Age=0' : ''}`);
+    response.setHeader('Set-Cookie', `${cookie}=${token}; Path=/; HttpOnly; SameSite=Strict${local ? '' : '; Secure'}${clear ? '; Max-Age=0' : ''}`);
   }
 
   function resetCookie(response, token, maxAge) {
-    response.setHeader('Set-Cookie', `${recoveryCookie}=${token}; Path=/; HttpOnly; SameSite=Strict${demo ? '' : '; Secure'}; Max-Age=${maxAge}`);
+    response.setHeader('Set-Cookie', `${recoveryCookie}=${token}; Path=/; HttpOnly; SameSite=Strict${local ? '' : '; Secure'}; Max-Age=${maxAge}`);
   }
 
   function sessionFor(request) {
@@ -204,7 +211,7 @@ export async function createApplication({ filename, demo = false, adminPassword,
     const { pathname } = url;
     const method = request.method;
     if (method === 'GET' && pathname === '/api/status') return {
-      demo, pinLength, demoCredentials: demo && !pinVault && !adminAuth,
+      pinLength,
       managedPins: Boolean(pinVault), passwordRecovery, storage: configuredStore ? 'supabase' : 'sqlite',
     };
     if (method === 'GET' && pathname === '/api/branches') return { branches: await store.branches() };
@@ -312,13 +319,14 @@ export async function createApplication({ filename, demo = false, adminPassword,
     response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     try {
       const remote = request.socket.remoteAddress;
-      const proxy = trustProxy && loopbacks.has(remote) && request.headers['x-forwarded-proto'] === 'https';
+      const proxy = trustProxy && (proxyAddresses.has(remote) || proxyAddresses.has(remote?.replace(/^::ffff:/, '')))
+        && request.headers['x-forwarded-proto'] === 'https';
       const encrypted = request.socket.encrypted || proxy;
-      requireValue(demo ? loopbacks.has(remote) : encrypted, 403, demo ? 'Use the demo on this computer.' : 'HTTPS is required.');
-      if (!demo) response.setHeader('Strict-Transport-Security', 'max-age=31536000');
+      requireValue(local ? loopbacks.has(remote) : encrypted, 403, local ? 'This instance is available on its own computer.' : 'HTTPS is required.');
+      if (!local) response.setHeader('Strict-Transport-Security', 'max-age=31536000');
       const origin = publicOrigin ?? `${encrypted ? 'https' : 'http'}://${request.headers.host}`;
       const url = new URL(request.url, origin);
-      requireValue(!demo || ['127.0.0.1', 'localhost'].includes(url.hostname), 403, 'Open the demo from localhost.');
+      requireValue(!local || ['127.0.0.1', 'localhost'].includes(url.hostname), 403, 'Open this instance from localhost.');
       const method = request.method;
       if (method !== 'GET' && method !== 'HEAD') {
         requireValue(request.headers['sec-fetch-site'] !== 'cross-site' && (!request.headers.origin || request.headers.origin === origin), 403, 'Use this application to submit changes.');
@@ -352,17 +360,16 @@ export async function createApplication({ filename, demo = false, adminPassword,
 
 async function main() {
   const env = loadConfig();
-  const localStore = process.argv.includes('--demo');
-  const demo = localStore || process.argv.includes('--local');
-  const cloud = !localStore && (process.argv.includes('--supabase') || Boolean(env.DATABASE_URL));
-  const { CAPITALBET_TLS_CERT, CAPITALBET_TLS_KEY, CAPITALBET_ADMIN_PASSWORD, CAPITALBET_DB,
+  const local = process.argv.includes('--local');
+  const cloud = !local || process.argv.includes('--supabase');
+  const { CAPITALBET_TLS_CERT, CAPITALBET_TLS_KEY, CAPITALBET_DB,
     CAPITALBET_PUBLIC_ORIGIN, CAPITALBET_TRUST_PROXY, CAPITALBET_PORT } = env;
   const tls = CAPITALBET_TLS_CERT && CAPITALBET_TLS_KEY ? {
     cert: readFileSync(CAPITALBET_TLS_CERT), key: readFileSync(CAPITALBET_TLS_KEY),
   } : undefined;
   const pinVault = createPinVault(env.CAPITALBET_PIN_KEY);
   const telegram = { token: env.TELEGRAM_BOT_TOKEN, chatId: env.TELEGRAM_CHAT_ID };
-  if (cloud && !pinVault) throw new Error('Set CAPITALBET_PIN_KEY before starting with Supabase.');
+  if (!pinVault) throw new Error('Set CAPITALBET_PIN_KEY in the private configuration before starting Capitalbet.');
   const pool = cloud ? makePool(postgresOptions(env)) : null;
   let server;
   try {
@@ -370,18 +377,22 @@ async function main() {
     const adminAuth = store ? createAdminAuth({ url: env.SUPABASE_URL, publishableKey: env.SUPABASE_PUBLISHABLE_KEY,
       email: env.CAPITALBET_ADMIN_EMAIL, userId: store.adminUserId }) : undefined;
     server = await createApplication({
-      demo, tls, adminPassword: CAPITALBET_ADMIN_PASSWORD, filename: CAPITALBET_DB, store, adminAuth, pinVault, telegram,
+      local, tls, filename: CAPITALBET_DB, store, adminAuth, pinVault, telegram,
       initialAdminPassword: env.CAPITALBET_INITIAL_ADMIN_PASSWORD,
       passwordRecovery: Boolean(store && (store.recoveryReady || env.CAPITALBET_RECOVERY_READY === '1')),
-      publicOrigin: CAPITALBET_PUBLIC_ORIGIN, trustProxy: CAPITALBET_TRUST_PROXY === '1',
+      publicOrigin: local ? undefined : CAPITALBET_PUBLIC_ORIGIN, trustProxy: CAPITALBET_TRUST_PROXY === '1',
+      proxyIps: env.CAPITALBET_PROXY_IPS?.split(',').map(address => address.trim()).filter(Boolean),
     });
   } catch (error) {
     await pool?.end();
     throw error;
   }
-  const port = Number(CAPITALBET_PORT ?? 3000);
-  server.listen(port, '127.0.0.1', () => {
-    console.log(`Capitalbet ${demo ? 'demo' : 'production'} running at ${CAPITALBET_PUBLIC_ORIGIN ?? `${tls ? 'https' : 'http'}://127.0.0.1:${server.address().port}`}`);
+  const port = Number(local ? CAPITALBET_PORT ?? 3000 : env.PORT ?? CAPITALBET_PORT ?? 3000);
+  const bind = local ? '127.0.0.1' : env.CAPITALBET_BIND ?? (env.PORT ? '0.0.0.0' : '127.0.0.1');
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error('Set a valid port for Capitalbet.');
+  server.listen(port, bind, () => {
+    const address = !local && CAPITALBET_PUBLIC_ORIGIN ? CAPITALBET_PUBLIC_ORIGIN : `${tls ? 'https' : 'http'}://${bind}:${server.address().port}`;
+    console.log(`Capitalbet listening at ${address}`);
   });
 }
 

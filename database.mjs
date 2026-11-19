@@ -5,7 +5,7 @@ import { branchNames } from './branches.mjs';
 import { withBalance } from './public/sales.mjs';
 import { managedBranch, notificationPayload, overviewReport, publicBranch, registerReport, sessionDetails } from './reports.mjs';
 
-export function openStore(filename, { demo, adminHash, demoPinHash, notifyOnSave = false }) {
+export function openStore(filename, { local, adminHash, initialPinHash, notifyOnSave = false }) {
   mkdirSync(dirname(filename), { recursive: true });
   const db = new DatabaseSync(filename);
   db.function('entry_balance', { deterministic: true }, (kind, amounts) => withBalance(kind, JSON.parse(amounts)).balance);
@@ -105,15 +105,16 @@ export function openStore(filename, { demo, adminHash, demoPinHash, notifyOnSave
   const retryNotification = db.prepare('UPDATE notifications SET available_at = ?, lease_token = NULL, lease_until = NULL WHERE id = ? AND lease_token = ?');
   const completeNotification = db.prepare('DELETE FROM notifications WHERE id = ? AND lease_token = ?');
 
-  const mode = demo ? 'demo' : 'production';
+  const mode = local ? 'local' : 'production';
   transaction(() => {
     const existing = getConfig.get('mode');
-    if (existing && existing.value !== mode) throw new Error('Use separate databases for demo and production.');
+    if (existing?.value === 'demo' && local) setConfig.run(mode, 'mode');
+    else if (existing && existing.value !== mode) throw new Error('Use separate databases for local and production data.');
     if (!existing) {
-      if (!adminHash) throw new Error('Set CAPITALBET_ADMIN_PASSWORD before first production startup.');
+      if (!adminHash) throw new Error('Set CAPITALBET_INITIAL_ADMIN_PASSWORD before first use of a local database.');
       addConfig.run('mode', mode);
       addConfig.run('admin_hash', adminHash);
-      for (const name of branchNames) addBranch.run(name, demoPinHash, null);
+      for (const name of branchNames) addBranch.run(name, initialPinHash, null);
     }
   });
   removeExpired.run(Date.now());

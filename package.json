@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node server.mjs --demo",
+    "dev": "node server.mjs --local",
     "dev:supabase": "node server.mjs --supabase --local",
     "setup:supabase": "node supabase/setup.mjs",
     "start": "node server.mjs",

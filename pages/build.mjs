@@ -17,15 +17,11 @@ function onlineAccess(address) {
         </div>`;
 }
 
-const localAccess = `<h2 id="access-heading">Capitalbet access</h2>
-        <p>Online sign-in is pending. If Capitalbet is running on this computer, you can open the local system.</p>
-        <div class="stack-form entry-actions">
-          <a class="btn primary" href="http://127.0.0.1:3000/">Open local staff sign-in</a>
-          <a class="btn secondary" href="http://127.0.0.1:3000/admin/login">Open local administrator sign-in</a>
-        </div>`;
+const pendingAccess = `<h2 id="access-heading">Capitalbet access</h2>
+        <p>Online sign-in will be available here once the Capitalbet server is connected.</p>`;
 
 const address = process.env.CAPITALBET_APP_URL?.trim();
-const access = address ? onlineAccess(address) : localAccess;
+const access = address ? onlineAccess(address) : pendingAccess;
 const template = await readFile(new URL('./index.html', import.meta.url), 'utf8');
 const output = new URL('../dist/pages/', import.meta.url);
 await mkdir(output, { recursive: true });

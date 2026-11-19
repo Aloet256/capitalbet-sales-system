@@ -78,7 +78,7 @@ function shell(state, contents) {
     <div class="workspace"><header class="topbar"><div class="toppath">
       <button class="icon-btn menu-toggle" data-action="menu" aria-label="Toggle navigation" aria-controls="sidebar" aria-expanded="false">${icon('menu')}</button>
       <span>${admin ? 'Admin' : 'Staff'}</span><span class="path-divider">/</span><strong>${currentTitle}</strong>
-      </div><div class="top-context">${status.demo ? '<span class="demo-tag">Demo mode</span>' : ''}<span class="context-name">${icon(admin ? 'shield' : 'branch', 17)} ${context}</span></div></header>
+      </div><div class="top-context"><span class="context-name">${icon(admin ? 'shield' : 'branch', 17)} ${context}</span></div></header>
       <main id="main" class="workspace-content">${contents}</main>
     </div>
   </div>`;
@@ -113,7 +113,6 @@ function loginPage(state) {
       </div>
     </section>
     <section class="login-workspace" aria-labelledby="sign-in-title">
-      <div class="login-top">${status.demo ? '<span class="demo-tag">Demo mode</span>' : ''}</div>
       <div class="login-card"><div class="login-icon">${icon(admin ? 'shield' : 'lock', 24)}</div>
         ${state.type === 'recovery' ? recoveryFields(state.recoveryStep) : `<h2 id="sign-in-title" tabindex="-1">${admin ? 'Administrator sign-in' : 'Branch sign-in'}</h2>
         <p>${admin ? 'Enter your password to access sales reports and manage branches.' : 'Select your branch and enter its PIN to access the sales registers.'}</p>
@@ -123,7 +122,6 @@ function loginPage(state) {
           ${errorBox}<button class="btn primary login-submit" type="submit">Sign in</button>
         </form>
         ${admin ? '<div class="forgot-link"><a href="/admin/forgot-password">Forgot password?</a></div>' : ''}
-        ${status.demoCredentials ? `<p class="demo-help">${admin ? 'Demo password <code>CapitalbetDemo!2026</code>' : 'Temporary staff PIN <code>1234</code>'}</p>` : ''}
         <div class="login-switch"><a href="${admin ? '/' : '/admin/login'}">${admin ? 'Branch staff sign-in' : 'Administrator sign-in'}</a></div>`}
       </div>
       <footer>Capitalbet <span>·</span> Sales System</footer>

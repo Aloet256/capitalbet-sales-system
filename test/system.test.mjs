@@ -9,7 +9,8 @@ import { createPinVault } from '../credentials.mjs';
 import { daysInMonth } from '../public/sales.mjs';
 
 async function listen(options) {
-  const server = await createApplication(options);
+  const defaults = options.local ? { adminPassword: fixtureAdminPassword, initialBranchPin: '1234' } : {};
+  const server = await createApplication({ ...defaults, ...options });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   return {
@@ -35,15 +36,15 @@ function client(origin, defaults = {}) {
 const month = '2028-02';
 const slots = { totalIn: 100_000, totalOut: 24_000, expenses: 4_000, cashIn: 12_000, cashOut: 3_000, freeCoupons: 1_000 };
 const live = { totalIn: 15_000, totalOut: 18_000, tickets: 4 };
-const demoPassword = 'CapitalbetDemo!2026';
+const fixtureAdminPassword = 'Capitalbet-admin-fixture';
 const login = (session, branchId, pin = '1234') => session('/api/login/staff', { method: 'POST', body: { branchId, pin } });
-const adminLogin = (session, password = demoPassword) => session('/api/login/admin', { method: 'POST', body: { password } });
+const adminLogin = (session, password = fixtureAdminPassword) => session('/api/login/admin', { method: 'POST', body: { password } });
 const read = (session, kind, period = month) => session(`/api/registers/${kind}?month=${period}`);
 const save = (session, kind, values, revision = 0, day = `${month}-29`) => session(`/api/registers/${kind}/${day}`, { method: 'PUT', body: { revision, values } });
 
 test('staff and administrator flows with persistent and isolated registers', async t => {
-  const directory = await mkdtemp(join(tmpdir(), 'capitalbet-demo-'));
-  const options = { demo: true, filename: join(directory, 'database.sqlite') };
+  const directory = await mkdtemp(join(tmpdir(), 'capitalbet-local-'));
+  const options = { local: true, filename: join(directory, 'database.sqlite') };
   let app = await listen(options);
   t.after(async () => { await app.stop(); await rm(directory, { recursive: true, force: true }); });
   const staff = client(app.origin);
@@ -113,7 +114,7 @@ test('staff and administrator flows with persistent and isolated registers', asy
 
 test('closing balances carry across years, empty months and historical corrections', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'capitalbet-carry-'));
-  const app = await listen({ demo: true, filename: join(directory, 'database.sqlite') });
+  const app = await listen({ local: true, filename: join(directory, 'database.sqlite') });
   t.after(async () => { await app.stop(); await rm(directory, { recursive: true, force: true }); });
   const staff = client(app.origin);
   const other = client(app.origin);
@@ -155,7 +156,7 @@ test('closing balances carry across years, empty months and historical correctio
   assert.deepEqual(balances((await read(staff, 'slots', '2027-12')).body.totals), [0, 130_000, 130_000]);
 });
 
-test('production requires HTTPS, has no demo PINs and issues secure cookies', async t => {
+test('production requires HTTPS and issues secure cookies using configured credentials', async t => {
   const directory = await mkdtemp(join(tmpdir(), 'capitalbet-production-'));
   const options = { filename: join(directory, 'database.sqlite'), adminPassword: 'Unique-Admin-Password-fixture' };
   await assert.rejects(createApplication(options), /Configure TLS/);
@@ -165,7 +166,9 @@ test('production requires HTTPS, has no demo PINs and issues secure cookies', as
   assert.equal((await plain('/api/status')).status, 403);
   const admin = client(app.origin, { 'X-Forwarded-Proto': 'https' });
   const staff = client(app.origin, { 'X-Forwarded-Proto': 'https' });
-  assert.equal((await admin('/api/status')).body.demo, false);
+  const status = (await admin('/api/status')).body;
+  assert.equal(status.pinLength, 6);
+  assert.equal(Object.hasOwn(status, 'demo'), false);
   assert.equal((await adminLogin(admin)).status, 401);
   const signedIn = await adminLogin(admin, options.adminPassword);
   assert.equal(signedIn.status, 200);
@@ -183,7 +186,7 @@ test('managed branch PINs are admin-only and a saved register queues a Telegram 
   let deliver;
   const delivered = new Promise(resolve => { deliver = resolve; });
   const app = await listen({
-    demo: true, filename: ':memory:', pinVault: createPinVault('ab'.repeat(32)), initialAdminPassword: 'Admin-password-fixture',
+    local: true, filename: ':memory:', pinVault: createPinVault('ab'.repeat(32)), initialAdminPassword: 'Admin-password-fixture',
     telegram: {
       token: 'fixture-token', chatId: 'fixture-chat',
       fetcher: async (_url, options) => {
@@ -225,7 +228,7 @@ test('managed branch PINs are admin-only and a saved register queues a Telegram 
 test('administrator password changes require a verified recovery code and revoke the old session', async t => {
   let password = 'Previous-password-fixture';
   let requested = 0;
-  const app = await listen({ demo: true, filename: ':memory:', adminAuth: {
+  const app = await listen({ local: true, filename: ':memory:', adminAuth: {
     signIn: async input => input === password,
     sendCode: async () => { requested++; },
     verifyCode: async code => requested && code === '693014' ? { verified: true } : null,

@@ -44,8 +44,6 @@ h1[tabindex]:focus { outline: none; }
 .btn.secondary:hover, .icon-btn:hover, .row-btn:hover { background: #f2f3f6; }
 .icon-btn { width: 2.4rem; height: 2.4rem; color: var(--muted); background: transparent; border: 0; }
 .row-btn { min-height: 2.35rem; padding: .3rem .65rem; color: var(--ink); background: #fff; border: 1px solid #dfe3ea; font-size: .875rem; }
-.demo-tag { display: inline-flex; align-items: center; padding: .25rem .58rem; border: 1px solid #edcf88; border-radius: .4rem; color: #644509; background: #fff5d6; font-size: .8125rem; font-weight: 700; white-space: nowrap; }
-
 .login-layout { display: grid; grid-template-columns: minmax(0, .98fr) minmax(0, 1fr); min-height: 100dvh; }
 .login-brand { position: relative; isolation: isolate; overflow: hidden; display: flex; align-items: center; padding: clamp(2rem, 7vw, 7.5rem); color: #fff; background: radial-gradient(ellipse at 99% 88%, #aa1d31 0%, #761827 30%, transparent 62%), linear-gradient(147deg, #171a23 12%, #321921 72%); }
 .login-brand::before, .login-brand::after { content: ''; position: absolute; z-index: -1; aspect-ratio: 1; width: 76%; right: -39%; bottom: -19%; border-radius: 50%; border: 1px solid #ffb6a947; box-shadow: 0 0 0 2.4rem #f99a9c12, 0 0 0 4.8rem #f99a9c0b, 0 0 0 7.2rem #f99a9c09; }
@@ -60,10 +58,9 @@ h1[tabindex]:focus { outline: none; }
 .brand-features { display: flex; gap: .65rem; flex-wrap: wrap; margin-top: 2.1rem; }
 .brand-features span { display: inline-flex; align-items: center; gap: .47rem; padding: .48rem .62rem; border: 1px solid #f5b2bb45; border-radius: .5rem; font-size: .875rem; font-weight: 650; }
 .brand-features svg { color: #ffcc55; }
-.login-workspace { display: grid; align-content: space-between; gap: 2rem; background: #fafafb; padding: 1.5rem clamp(1.2rem, 4vw, 3rem); }
-.login-top { min-height: 1.75rem; display: flex; justify-content: flex-end; }
+.login-workspace { display: grid; grid-template-rows: 1fr auto; align-items: center; gap: 2rem; background: #fafafb; padding: 1.5rem clamp(1.2rem, 4vw, 3rem); }
 .login-card { width: min(100%, 26rem); justify-self: center; }
-.entry-workspace { align-content: center; }
+.entry-workspace { grid-template-rows: 1fr; }
 .entry-actions { margin-top: 1rem; }
 .login-icon, .module-icon, .metric-icon, .notice-icon { display: inline-grid; place-content: center; width: 3rem; height: 3rem; border-radius: .78rem; background: var(--red-soft); color: var(--red); }
 .login-card h2 { margin: .85rem 0 .35rem; font-size: clamp(1.8rem, 3vw, 2.35rem); line-height: 1.15; letter-spacing: -.045em; }
@@ -80,8 +77,6 @@ select { appearance: none; padding-right: 2.1rem; background-image: url("data:im
 .secret-field button { position: absolute; right: .25rem; }
 .login-submit { width: 100%; margin-top: .5rem; }
 .form-error { color: #8f1422; background: #fff1f2; border: 1px solid #ffced3; font-size: .875rem; padding: .55rem .65rem; border-radius: .4rem; }
-.login-card .demo-help { font-size: .875rem; margin-top: .9rem; text-align: center; }
-.demo-help code { font-size: .9em; color: #762121; font-weight: 650; background: #fff0e2; padding: .13em .35em; border-radius: .25rem; }
 .login-switch { border-top: 1px solid var(--line); text-align: center; margin-top: 1.25rem; padding-top: 1rem; }
 .login-switch a, .back-link { color: #a51625; font-size: .9375rem; font-weight: 700; }
 .login-switch a:hover, .table-link:hover, .back-link:hover { text-decoration: underline; text-underline-offset: .19em; }

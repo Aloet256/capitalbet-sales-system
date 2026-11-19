@@ -2,9 +2,9 @@
 
 ## Run on Windows
 
-Use Node.js 24 or later. Run `npm ci`, then double-click `Start Capitalbet.cmd` or run `npm run dev`. Open [Branch sign-in](http://127.0.0.1:3000/) or [Administrator sign-in](http://127.0.0.1:3000/admin/login). Keep the server running while using the app.
+Use Node.js 24 or later. Run `npm ci`, then double-click `Start Capitalbet.cmd` or run `npm run dev` for local maintenance. Open [Branch sign-in](http://127.0.0.1:3000/) or [Administrator sign-in](http://127.0.0.1:3000/admin/login).
 
-The local preview includes all 53 supplied branches and uses `data/demo.sqlite`. It accepts connections from this computer only. In an unconfigured test checkout, the temporary staff PIN is `1234` and the demo administrator password is `CapitalbetDemo!2026`. When the private Capitalbet configuration contains a PIN encryption key, the application assigns random six-digit PINs and the Branch Management page lets the administrator view and reset them.
+The maintenance server uses the existing `data/demo.sqlite` file and accepts loopback connections. Set `CAPITALBET_INITIAL_ADMIN_PASSWORD` for first-time setup and `CAPITALBET_PIN_KEY` in the private configuration. The application assigns random six-digit PINs and the Branch Management page lets the administrator view and reset them.
 
 Staff can add or edit daily entries and review monthly totals. Administrators can switch between the two registers in Sales Overview, select a branch to see its daily entries, and add branches or set staff PINs in Branch Management. Changing a branch PIN ends existing staff sessions for that branch and preserves its sales entries.
 
@@ -26,10 +26,8 @@ Run `npm run dev:supabase` to verify the Supabase-backed system from the local c
 
 ## Production setup
 
-Run `npm start` from this folder. When `DATABASE_URL` is set, the server uses the configured Supabase project and its admin account. For a standalone production SQLite instance, set `CAPITALBET_ADMIN_PASSWORD` to a unique password of 14–256 characters before first startup. The application hashes and stores the password during database initialization.
+Deploy branch `main` to a Node.js 24 host using `npm ci` to build and `npm start` to start. Production requires the initialized Supabase database, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `CAPITALBET_ADMIN_EMAIL`, and the same `CAPITALBET_PIN_KEY` used during import. Configure `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the host's private environment if Telegram is enabled. Keep the Supabase administrator provisioning key on the setup machine.
 
-Set `CAPITALBET_TLS_CERT` and `CAPITALBET_TLS_KEY` to the certificate and key file paths for direct HTTPS. For an HTTPS reverse proxy, set `CAPITALBET_TRUST_PROXY=1` and `CAPITALBET_PUBLIC_ORIGIN` to the HTTPS origin with no trailing slash. Forward requests to `127.0.0.1:3000`. Configure the proxy to overwrite `X-Forwarded-Proto` with `https` and `X-Forwarded-For` with the client address. `CAPITALBET_PORT` changes the local listening port.
-
-Standalone production uses `data/production.sqlite` by default. Set `CAPITALBET_DB` to a persistent local database path if needed. For a file-copy backup, stop the server before copying the database and any SQLite sidecar files that remain.
+Set `CAPITALBET_TLS_CERT` and `CAPITALBET_TLS_KEY` to the certificate and key file paths for direct HTTPS. For an HTTPS reverse proxy, set `CAPITALBET_TRUST_PROXY=1` and `CAPITALBET_PUBLIC_ORIGIN` to the HTTPS origin with no trailing slash. Configure the proxy to overwrite `X-Forwarded-Proto` with `https` and `X-Forwarded-For` with the client address. Loopback proxies are recognized automatically in this mode. Set `CAPITALBET_PROXY_IPS` to a comma-separated list of additional trusted proxy addresses if required. The production process honors the host's `PORT` environment variable. Set `CAPITALBET_BIND` and `CAPITALBET_PORT` to override the default bind address or port on a self-managed host.
 
 The public GitHub Pages address publishes the Capitalbet entry page from `pages/`. Authentication, data writes and Telegram delivery run on the Node.js server. Once the app has an HTTPS address, set the GitHub Actions repository variable `CAPITALBET_APP_URL` to its origin and run **Publish Capitalbet entry page**. The page will send staff and administrators to their respective sign-in pages. [GitHub Pages documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages).
