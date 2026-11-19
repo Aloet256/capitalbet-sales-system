@@ -32,4 +32,4 @@ Set `CAPITALBET_TLS_CERT` and `CAPITALBET_TLS_KEY` to the certificate and key fi
 
 Standalone production uses `data/production.sqlite` by default. Set `CAPITALBET_DB` to a persistent local database path if needed. For a file-copy backup, stop the server before copying the database and any SQLite sidecar files that remain.
 
-The GitHub repository holds the source. A deployed application needs a Node.js server process for authentication, data writes and Telegram delivery. GitHub Pages serves static files. [GitHub Pages documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages).
+The public GitHub Pages address publishes the Capitalbet entry page from `pages/`. Authentication, data writes and Telegram delivery run on the Node.js server. Once the app has an HTTPS address, set the GitHub Actions repository variable `CAPITALBET_APP_URL` to its origin and run **Publish Capitalbet entry page**. The page will send staff and administrators to their respective sign-in pages. [GitHub Pages documentation](https://docs.github.com/en/pages/getting-started-with-github-pages/what-is-github-pages).

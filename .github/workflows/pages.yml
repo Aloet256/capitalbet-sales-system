@@ -1,0 +1,45 @@
+name: Publish Capitalbet entry page
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/pages.yml
+      - pages/**
+      - public/styles.css
+      - public/capitalbet-logo.png
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: capitalbet-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: node pages/build.mjs
+        env:
+          CAPITALBET_APP_URL: ${{ vars.CAPITALBET_APP_URL }}
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/pages
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment
