@@ -214,7 +214,9 @@ test('managed branch PINs are admin-only and a saved register queues a Telegram 
   assert.match(alert.text, /Live-in-Play balance: UGX -30/);
   assert.equal((await admin(pinRoute, { method: 'PUT', body: {} })).status, 200);
   assert.equal((await read(staff, 'live')).status, 401);
-  assert.match((await admin(pinRoute)).body.pin, /^\d{6}$/);
+  const replacement = (await admin(pinRoute)).body.pin;
+  assert.match(replacement, /^\d{6}$/);
+  assert.notEqual(replacement, pin);
   const added = await admin('/api/admin/branches', { method: 'POST', body: { name: 'Managed Branch Fixture' } });
   assert.equal(added.status, 201);
   assert.match((await admin(`/api/admin/branches/${added.body.branch.id}/pin`)).body.pin, /^\d{6}$/);

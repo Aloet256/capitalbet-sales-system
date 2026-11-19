@@ -87,7 +87,7 @@ function shell(state, contents) {
 function recoveryFields(step = 'request') {
   const heading = '<h2 id="sign-in-title" tabindex="-1">Reset administrator password</h2>';
   const back = '<div class="login-switch"><a href="/admin/login">Administrator sign-in</a></div>';
-  if (!status.passwordRecovery) return `${heading}<p>Email recovery will be available once Supabase administrator authentication is connected.</p>${back}`;
+  if (!status.passwordRecovery) return `${heading}<p>Email recovery will be available when Supabase email delivery is configured.</p>${back}`;
   const details = {
     request: ['Send a one-time code to the administrator email address.', '', 'Send reset code'],
     verify: ['Enter the reset code from your email.', '<label for="reset-code">Reset code</label><input id="reset-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required>', 'Verify code'],

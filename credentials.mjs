@@ -3,7 +3,11 @@ import { promisify } from 'node:util';
 
 const derive = promisify(scrypt);
 export const digest = token => createHash('sha256').update(token).digest('hex');
-export const randomPin = () => String(randomInt(100_000, 1_000_000));
+export function randomPin(previous) {
+  let pin;
+  do { pin = String(randomInt(100_000, 1_000_000)); } while (pin === previous);
+  return pin;
+}
 
 export async function hashSecret(secret) {
   const salt = randomBytes(16).toString('hex');

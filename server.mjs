@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createAdminAuth } from './admin-recovery.mjs';
 import { loadConfig, postgresOptions } from './config.mjs';
-import { createPinVault, digest, hashSecret, matches } from './credentials.mjs';
+import { createPinVault, digest, hashSecret, matches, randomPin } from './credentials.mjs';
 import { openStore } from './database.mjs';
 import { makePool, openPostgresStore } from './postgres-store.mjs';
 import { startTelegramWorker } from './telegram.mjs';
@@ -72,7 +72,7 @@ const staticFiles = new Map(Object.entries({
 const pages = new Set(['/', '/dashboard', '/slots', '/live', '/admin', '/admin/login', '/admin/forgot-password', '/admin/branches']);
 
 export async function createApplication({ filename, demo = false, adminPassword, initialAdminPassword, tls, trustProxy = false,
-  publicOrigin, store: configuredStore, pinVault, adminAuth, telegram } = {}) {
+  publicOrigin, store: configuredStore, pinVault, adminAuth, passwordRecovery = Boolean(adminAuth), telegram } = {}) {
   if (!configuredStore && !demo && adminPassword && (adminPassword.length < 14 || adminPassword.length > 256 || adminPassword === demoPassword)) {
     throw new Error('Choose a unique production administrator password with 14 to 256 characters.');
   }
@@ -154,16 +154,17 @@ export async function createApplication({ filename, demo = false, adminPassword,
     return branch;
   }
 
-  async function newPin(name, data) {
-    if (pinVault && (data.pin === undefined || data.pin === '')) return pinVault.protect(name);
+  async function newPin(name, data, previous) {
+    if (pinVault && (data.pin === undefined || data.pin === '')) return pinVault.protect(name, randomPin(previous));
     const rule = pinLength === 4 ? /^\d{4,12}$/ : /^\d{6,12}$/;
     requireValue(typeof data.pin === 'string' && rule.test(data.pin), 400, `Enter a PIN with ${pinLength} to 12 digits.`);
     requireValue(pinLength === 4 || data.pin !== '123456', 400, 'Choose a less predictable PIN.');
+    requireValue(data.pin !== previous, 400, 'Enter a different staff PIN.');
     return pinVault ? pinVault.protect(name, data.pin) : { hash: await hashSecret(data.pin), cipher: null };
   }
 
   async function recover(request, response, action, ip) {
-    requireValue(adminAuth, 503, 'Email recovery needs the Supabase administrator connection.');
+    requireValue(adminAuth && passwordRecovery, 503, 'Email recovery needs the Supabase recovery email setup.');
     const data = await readJson(request);
     if (action === 'request') {
       throttle('admin-recovery-email', 3);
@@ -204,7 +205,7 @@ export async function createApplication({ filename, demo = false, adminPassword,
     const method = request.method;
     if (method === 'GET' && pathname === '/api/status') return {
       demo, pinLength, demoCredentials: demo && !pinVault && !adminAuth,
-      managedPins: Boolean(pinVault), passwordRecovery: Boolean(adminAuth), storage: configuredStore ? 'supabase' : 'sqlite',
+      managedPins: Boolean(pinVault), passwordRecovery, storage: configuredStore ? 'supabase' : 'sqlite',
     };
     if (method === 'GET' && pathname === '/api/branches') return { branches: await store.branches() };
     if (method === 'GET' && pathname === '/api/session') return { session: await sessionFor(request) };
@@ -294,7 +295,8 @@ export async function createApplication({ filename, demo = false, adminPassword,
       }
       if (method === 'PUT' && pin) {
         const branch = await getBranch(pin[1]);
-        const { hash, cipher } = await newPin(branch.name, await readJson(request));
+        const previous = pinVault && branch.pin_cipher ? pinVault.reveal(branch.name, branch.pin_cipher) : undefined;
+        const { hash, cipher } = await newPin(branch.name, await readJson(request), previous);
         await authorize(request, 'admin');
         await store.changePin(branch.id, hash, cipher);
         return { updated: true };
@@ -370,6 +372,7 @@ async function main() {
     server = await createApplication({
       demo, tls, adminPassword: CAPITALBET_ADMIN_PASSWORD, filename: CAPITALBET_DB, store, adminAuth, pinVault, telegram,
       initialAdminPassword: env.CAPITALBET_INITIAL_ADMIN_PASSWORD,
+      passwordRecovery: Boolean(store && (store.recoveryReady || env.CAPITALBET_RECOVERY_READY === '1')),
       publicOrigin: CAPITALBET_PUBLIC_ORIGIN, trustProxy: CAPITALBET_TRUST_PROXY === '1',
     });
   } catch (error) {

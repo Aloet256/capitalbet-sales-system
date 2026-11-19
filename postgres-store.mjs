@@ -33,9 +33,11 @@ export async function openPostgresStore(pool, { notifyOnSave = false } = {}) {
   const lookupSession = (client, token) => first(client, sessionSql, [token, Date.now()]);
   const setting = await first(pool, "SELECT value FROM capitalbet.config WHERE key = 'admin_user_id'");
   if (!setting) throw new Error('Run the Supabase setup script before starting the app.');
+  const recovery = await first(pool, "SELECT value FROM capitalbet.config WHERE key = 'recovery_ready'");
 
   return {
     adminUserId: setting.value,
+    recoveryReady: recovery?.value === '1',
     branch: id => first(pool, branchSql, [id]),
     branches: async () => (await rows(pool, list)).map(publicBranch),
     managedBranches: async () => (await rows(pool, list)).map(managedBranch),

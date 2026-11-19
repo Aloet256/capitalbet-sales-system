@@ -83,8 +83,8 @@ async function provisionAdmin(pool, env) {
 
 async function addEmailCode(env) {
   if (!env.SUPABASE_ACCESS_TOKEN) {
-    console.log('Add {{ .Token }} to the Reset password email template in Supabase to deliver a numeric code.');
-    return;
+    console.log('Configure SMTP and add {{ .Token }} to the Supabase Reset password email template to enable recovery.');
+    return false;
   }
   const ref = new URL(env.SUPABASE_URL).hostname.split('.')[0];
   if (!/^[a-z0-9]{20}$/.test(ref)) throw new Error('The Supabase project URL needs its original project hostname for template setup.');
@@ -92,14 +92,19 @@ async function addEmailCode(env) {
   const headers = { Authorization: `Bearer ${env.SUPABASE_ACCESS_TOKEN}`, 'Content-Type': 'application/json' };
   const settings = await fetch(route, { headers, signal: AbortSignal.timeout(10_000) });
   if (!settings.ok) throw new Error(`The password recovery template could not be read (${settings.status}).`);
-  const { mailer_templates_recovery_content: template } = await settings.json();
-  if (/{{\s*\.Token\s*}}/.test(template ?? '')) return;
+  const { smtp_host: smtpHost, mailer_templates_recovery_content: template } = await settings.json();
+  if (!smtpHost) {
+    console.log('The project needs custom SMTP before the reset-code email template can be enabled.');
+    return false;
+  }
+  if (/{{\s*\.Token\s*}}/.test(template ?? '')) return true;
   const previous = template || '<h2>Reset your password</h2><p><a href="{{ .ConfirmationURL }}">Reset password</a></p>';
   const result = await fetch(route, { method: 'PATCH', headers, signal: AbortSignal.timeout(10_000), body: JSON.stringify({
     mailer_templates_recovery_content: `${previous}\n<p>Your Capitalbet password reset code is <strong>{{ .Token }}</strong>.</p>`,
   }) });
   if (!result.ok) throw new Error(`The password recovery template could not be updated (${result.status}).`);
   console.log('Added the numeric code to the Supabase password recovery template.');
+  return true;
 }
 
 async function main() {
@@ -116,7 +121,9 @@ async function main() {
     console.log(`Supabase has ${imported.branches} branches. Verified ${imported.entries} local sales entries in Supabase.`);
     await provisionAdmin(pool, env);
     console.log('The administrator account is provisioned in Supabase.');
-    await addEmailCode(env);
+    if (await addEmailCode(env)) {
+      await pool.query("INSERT INTO capitalbet.config (key, value) VALUES ('recovery_ready', '1') ON CONFLICT (key) DO UPDATE SET value = excluded.value");
+    }
   } finally {
     await pool.end();
   }
