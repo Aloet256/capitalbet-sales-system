@@ -7,26 +7,56 @@ import {
 const root = document.querySelector('#app');
 const editor = document.querySelector('#editor');
 const toast = document.querySelector('#toast');
+const supabaseApi = document.querySelector('meta[name="capitalbet-api"]')?.content;
+const sessionKey = 'capitalbet-sales-session';
+const routeHref = path => supabaseApi ? `#${path}` : path;
 let current;
 let version = 0;
 let toastTimeout;
 let status;
+let sessionToken;
+if (supabaseApi) {
+  try { sessionToken = sessionStorage.getItem(sessionKey); } catch { /* Storage may be unavailable. */ }
+}
+
+function rememberSession(token) {
+  sessionToken = token;
+  try {
+    if (token) sessionStorage.setItem(sessionKey, token);
+    else sessionStorage.removeItem(sessionKey);
+  } catch { /* This page can still keep the session in memory. */ }
+}
 
 async function api(path, { method = 'GET', body, ...options } = {}) {
-  const init = { method, ...options };
+  const init = { method, ...options, headers: new Headers(options.headers) };
+  const previousToken = sessionToken;
+  if (supabaseApi && previousToken) init.headers.set('Authorization', `Bearer ${previousToken}`);
   if (body !== undefined) {
-    init.headers = { 'Content-Type': 'application/json' };
+    init.headers.set('Content-Type', 'application/json');
     init.body = JSON.stringify(body);
   }
-  const response = await fetch(`/api/${path}`, init);
-  const data = await response.json();
-  if (!response.ok) throw Object.assign(new Error(data.error ?? 'The request could not be completed.'), { status: response.status });
+  const response = await fetch(`${supabaseApi ?? '/api'}/${path}`, init);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = response.status === 404 && path === 'status' ? 'Capitalbet is waiting for its Supabase service.' : data.error ?? 'The request could not be completed.';
+    throw Object.assign(new Error(message), { status: response.status });
+  }
+  if (supabaseApi && /^login\/(staff|admin)$/.test(path)) {
+    if (!/^[\da-f]{64}$/.test(data.token ?? '')) throw new Error('Capitalbet could not start a session.');
+    rememberSession(data.token);
+  }
+  if (supabaseApi && previousToken === sessionToken && (path === 'logout' || (path === 'session' && !data.session))) rememberSession(null);
   return data;
 }
 
+function currentAddress() {
+  return supabaseApi ? new URL(location.hash.startsWith('#/') ? location.hash.slice(1) : '/', location.origin) : new URL(location.href);
+}
+
 function route() {
-  const path = location.pathname.replace(/\/$/, '') || '/';
-  const query = new URLSearchParams(location.search);
+  const address = currentAddress();
+  const path = address.pathname.replace(/\/$/, '') || '/';
+  const query = address.searchParams;
   const month = validMonth(query.get('month')) ? query.get('month') : today().slice(0, 7);
   const overviewKind = query.get('register') === 'live' ? 'live' : 'slots';
   const branch = path.match(/^\/admin\/branches\/(\d+)(?:\/(slots|live))?$/);
@@ -48,13 +78,13 @@ const landingUrl = role => role === 'admin' ? '/admin' : '/dashboard';
 
 function navigate(url, { replace = false, focus = true, keepScroll = false } = {}) {
   if (editor.open) editor.close();
-  history[replace ? 'replaceState' : 'pushState'](null, '', url);
+  history[replace ? 'replaceState' : 'pushState'](null, '', routeHref(url));
   if (!keepScroll) window.scrollTo(0, 0);
   return loadPage(focus);
 }
 
 function activeLink(href, name, glyph, active) {
-  return `<a href="${href}" ${active ? 'class="active" aria-current="page"' : ''}>${icon(glyph)}<span>${name}</span></a>`;
+  return `<a href="${routeHref(href)}" ${active ? 'class="active" aria-current="page"' : ''}>${icon(glyph)}<span>${name}</span></a>`;
 }
 
 function shell(state, contents) {
@@ -70,7 +100,7 @@ function shell(state, contents) {
   return `<div class="shell">
     <a href="#main" class="skip-link">Skip to content</a>
     <aside class="sidebar" id="sidebar">
-      <a class="sidebar-brand" href="${admin ? overview : landingUrl(state.role)}">${logo}<span>Sales System</span></a>
+      <a class="sidebar-brand" href="${routeHref(admin ? overview : landingUrl(state.role))}">${logo}<span>Sales System</span></a>
       <div class="sidebar-nav"><p>${admin ? 'ADMIN WORKSPACE' : 'STAFF WORKSPACE'}</p><nav aria-label="Main navigation">${links}</nav></div>
       <div class="sidebar-bottom"><div class="identity"><span class="identity-icon">${icon(admin ? 'shield' : 'branch', 18)}</span><div><strong>${context}</strong><span>${admin ? 'Admin access' : 'Branch staff'}</span></div></div>
       <button type="button" class="signout" data-action="logout">${icon('exit', 19)} Sign out</button></div>
@@ -86,17 +116,19 @@ function shell(state, contents) {
 
 function recoveryFields(step = 'request') {
   const heading = '<h2 id="sign-in-title" tabindex="-1">Reset administrator password</h2>';
-  const back = '<div class="login-switch"><a href="/admin/login">Administrator sign-in</a></div>';
+  const back = `<div class="login-switch"><a href="${routeHref('/admin/login')}">Administrator sign-in</a></div>`;
   if (!status.passwordRecovery) return `${heading}<p>Email recovery will be available when Supabase email delivery is configured.</p>${back}`;
   const details = {
     request: ['Send a one-time code to the administrator email address.', '', 'Send reset code'],
     verify: ['Enter the reset code from your email.', '<label for="reset-code">Reset code</label><input id="reset-code" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required>', 'Verify code'],
     reset: ['Choose a new password with at least eight characters.', '<label for="new-password">New password</label><input id="new-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="256" required><label for="confirm-password">Confirm password</label><input id="confirm-password" name="confirmation" type="password" autocomplete="new-password" minlength="8" maxlength="256" required>', 'Save password'],
   };
-  const [copy, fields, label] = details[step];
+  const [copy, fields, label] = step === 'reset' && supabaseApi
+    ? ['Enter the code from your email and choose a new password.', `${details.verify[1]}${details.reset[1]}`, 'Save password']
+    : details[step];
   return `${heading}<p>${copy}</p><form class="stack-form" data-form="recovery-${step}">${fields}${errorBox}
     <button class="btn primary login-submit" type="submit">${label}</button></form>
-    ${step !== 'request' ? '<div class="forgot-link"><a href="/admin/forgot-password">Start over</a></div>' : ''}${back}`;
+    ${step !== 'request' ? `<div class="forgot-link"><a href="${routeHref('/admin/forgot-password')}">Start over</a></div>` : ''}${back}`;
 }
 
 function loginPage(state) {
@@ -114,15 +146,18 @@ function loginPage(state) {
     </section>
     <section class="login-workspace" aria-labelledby="sign-in-title">
       <div class="login-card"><div class="login-icon">${icon(admin ? 'shield' : 'lock', 24)}</div>
-        ${state.type === 'recovery' ? recoveryFields(state.recoveryStep) : `<h2 id="sign-in-title" tabindex="-1">${admin ? 'Administrator sign-in' : 'Branch sign-in'}</h2>
+        ${state.offline ? `<h2 id="sign-in-title" tabindex="-1">${admin ? 'Administrator sign-in' : 'Branch sign-in'}</h2>
+          <p>${escapeHtml(state.offline)}</p><button class="btn primary" data-action="retry">Try again</button>
+          <div class="login-switch"><a href="${routeHref(admin ? '/' : '/admin/login')}">${admin ? 'Branch staff sign-in' : 'Administrator sign-in'}</a></div>`
+        : state.type === 'recovery' ? recoveryFields(state.recoveryStep) : `<h2 id="sign-in-title" tabindex="-1">${admin ? 'Administrator sign-in' : 'Branch sign-in'}</h2>
         <p>${admin ? 'Enter your password to access sales reports and manage branches.' : 'Select your branch and enter its PIN to access the sales registers.'}</p>
         <form data-form="${admin ? 'admin-login' : 'staff-login'}" class="stack-form">
           ${admin ? `<label for="password">Administrator password</label><div class="secret-field"><input id="password" name="password" type="password" autocomplete="current-password" placeholder="Enter your password" required maxlength="256"><button type="button" class="icon-btn" data-action="reveal" aria-label="Show password" aria-pressed="false">${icon('eye', 19)}</button></div>`
             : `<label for="branch-select">Branch</label><select id="branch-select" name="branchId" required><option value="">Select your branch</option>${options}</select><label for="staff-pin">Branch PIN</label><div class="secret-field"><input id="staff-pin" name="pin" type="password" inputmode="numeric" autocomplete="current-password" minlength="${status.pinLength}" maxlength="12" pattern="[0-9]{${status.pinLength},12}" placeholder="Enter branch PIN" required><button type="button" class="icon-btn" data-action="reveal" aria-label="Show PIN" aria-pressed="false">${icon('eye', 19)}</button></div>`}
           ${errorBox}<button class="btn primary login-submit" type="submit">Sign in</button>
         </form>
-        ${admin ? '<div class="forgot-link"><a href="/admin/forgot-password">Forgot password?</a></div>' : ''}
-        <div class="login-switch"><a href="${admin ? '/' : '/admin/login'}">${admin ? 'Branch staff sign-in' : 'Administrator sign-in'}</a></div>`}
+        ${admin ? `<div class="forgot-link"><a href="${routeHref('/admin/forgot-password')}">Forgot password?</a></div>` : ''}
+        <div class="login-switch"><a href="${routeHref(admin ? '/' : '/admin/login')}">${admin ? 'Branch staff sign-in' : 'Administrator sign-in'}</a></div>`}
       </div>
       <footer>Capitalbet <span>·</span> Sales System</footer>
     </section>
@@ -132,7 +167,7 @@ function loginPage(state) {
 function dashboard(state) {
   const options = Object.entries(registers).map(([kind, register]) => `<article class="panel register-card ${kind}">
     <div class="module-icon">${icon(register.icon, 28)}</div><h2>${register.title}</h2><p>${register.description}</p>
-    <a class="btn ${kind === 'slots' ? 'primary' : 'secondary'}" href="${periodUrl(`/${kind}`, state.month)}">Open ${register.title} Register</a>
+    <a class="btn ${kind === 'slots' ? 'primary' : 'secondary'}" href="${routeHref(periodUrl(`/${kind}`, state.month))}">Open ${register.title} Register</a>
   </article>`).join('');
   return `${pageHeading('Sales Dashboard', 'Choose a register to record or review your branch sales.')}
     <section class="branch-banner"><div class="banner-content"><div class="banner-label">${icon('branch', 18)} YOUR BRANCH</div><h2>${branchName(state.session.branch.name)}</h2>
@@ -176,7 +211,7 @@ function registerView(state) {
       ${edit ? `<td class="day-action"><button type="button" class="row-btn" data-action="edit-entry" data-day="${day}" aria-label="${record ? 'Edit' : 'Add'} entry for ${dateName(day)}">${icon(record ? 'edit' : 'plus', 16)}<span>${record ? 'Edit' : 'Add'}</span></button></td>` : ''}
     </tr>`;
   }).join('');
-  const back = edit ? '' : `<a class="back-link" href="${overviewUrl(month, kind)}">Sales overview</a>`;
+  const back = edit ? '' : `<a class="back-link" href="${routeHref(overviewUrl(month, kind))}">Sales overview</a>`;
   const tabs = edit ? '' : registerTabs(kind, month, `/admin/branches/${state.id}`);
   const description = edit ? registers[kind].description : `${branchName(data.branch.name)} · Read-only daily sales register`;
   return `${back}${pageHeading(`${registers[kind].title} Monthly Sales Register`, description, monthPicker(month))}${tabs}
@@ -191,16 +226,16 @@ function registerView(state) {
 
 function registerTabs(kind, month, path) {
   const href = type => path === '/admin' ? overviewUrl(month, type) : periodUrl(`${path}/${type}`, month);
-  return `<nav class="tabs" aria-label="Sales register">${Object.entries(registers).map(([key, register]) => `<a href="${href(key)}" ${key === kind ? 'aria-current="page"' : ''}>${icon(register.icon, 18)}${register.title}</a>`).join('')}</nav>`;
+  return `<nav class="tabs" aria-label="Sales register">${Object.entries(registers).map(([key, register]) => `<a href="${routeHref(href(key))}" ${key === kind ? 'aria-current="page"' : ''}>${icon(register.icon, 18)}${register.title}</a>`).join('')}</nav>`;
 }
 
 function salesRows(state, term = '') {
   const { branches } = state.data;
   const fields = fieldList(state.kind);
   const filtered = branches.filter(branch => branch.name.toLowerCase().includes(term.toLowerCase().trim()));
-  return filtered.length ? filtered.map(branch => `<tr><th scope="row"><a class="table-link" href="${periodUrl(`/admin/branches/${branch.id}/${state.kind}`, state.month)}">${branchName(branch.name)}</a></th>
+  return filtered.length ? filtered.map(branch => `<tr><th scope="row"><a class="table-link" href="${routeHref(periodUrl(`/admin/branches/${branch.id}/${state.kind}`, state.month))}">${branchName(branch.name)}</a></th>
     ${fields.map(([key]) => salesCell(key, branch[state.kind][key])).join('')}
-    <td class="row-actions"><a class="row-btn" href="${periodUrl(`/admin/branches/${branch.id}/${state.kind}`, state.month)}" aria-label="View ${branchName(branch.name)}">View</a></td></tr>`).join('')
+    <td class="row-actions"><a class="row-btn" href="${routeHref(periodUrl(`/admin/branches/${branch.id}/${state.kind}`, state.month))}" aria-label="View ${branchName(branch.name)}">View</a></td></tr>`).join('')
     : `<tr><td class="no-results" colspan="${fields.length + 2}">No branches match your search.</td></tr>`;
 }
 
@@ -250,7 +285,7 @@ async function loadPage(focus = false) {
     status = system;
     state.session = session.session;
     if (!state.role) {
-      root.innerHTML = notice('Page not found', 'That page is unavailable.', '<a class="btn primary" href="/">Open sign-in</a>');
+      root.innerHTML = notice('Page not found', 'That page is unavailable.', `<a class="btn primary" href="${routeHref('/')}">Open sign-in</a>`);
       return;
     }
     if (state.type === 'login' || state.type === 'recovery') {
@@ -279,9 +314,14 @@ async function loadPage(focus = false) {
     if (focus) root.querySelector('main h1[tabindex], .login-card h2')?.focus({ preventScroll: true });
   } catch (error) {
     if (requestVersion !== version) return;
+    if (supabaseApi && ['login', 'recovery'].includes(state.type)) {
+      current = state;
+      root.innerHTML = loginPage({ ...state, offline: 'The sign-in service is unavailable. Try again in a moment.' });
+      return;
+    }
     if (error.status === 401) return navigate(loginUrl(state.role), { replace: true });
     const panel = notice(error.status === 404 ? 'Page not found' : 'Unable to load this page', escapeHtml(error.message),
-      state.type === 'detail' && error.status === 404 ? `<a class="btn primary" href="${overviewUrl(state.month, state.kind)}">Sales overview</a>` : '<button class="btn primary" data-action="retry">Try again</button>');
+      state.type === 'detail' && error.status === 404 ? `<a class="btn primary" href="${routeHref(overviewUrl(state.month, state.kind))}">Sales overview</a>` : '<button class="btn primary" data-action="retry">Try again</button>');
     current = state;
     root.innerHTML = state.session?.role === state.role && !['login', 'recovery'].includes(state.type) ? shell(state, panel) : panel;
   } finally {
@@ -376,7 +416,7 @@ function notify(message, success = true) {
 function applyPeriod(form) {
   const selected = `${form.elements.year.value}-${form.elements.month.value}`;
   if (!validMonth(selected) || selected === current?.month) return;
-  const url = new URL(location.href);
+  const url = currentAddress();
   url.searchParams.set('month', selected);
   navigate(`${url.pathname}${url.search}`, { focus: false, keepScroll: true });
 }
@@ -402,14 +442,14 @@ async function submitForm(form) {
     } else if (type.startsWith('recovery-')) {
       const step = type.slice('recovery-'.length);
       if (step === 'reset' && data.password !== data.confirmation) throw new Error('The passwords must match.');
-      const body = step === 'request' ? {} : step === 'verify' ? { code: data.code } : { password: data.password };
+      const body = step === 'request' ? {} : step === 'verify' ? { code: data.code } : { password: data.password, ...(supabaseApi ? { code: data.code } : {}) };
       await api(`admin/recovery/${step}`, { method: 'POST', body });
       if (!form.isConnected) return;
       if (step === 'reset') {
         notify('Password changed. Sign in with your new password.');
         return navigate('/admin/login', { replace: true });
       }
-      current.recoveryStep = step === 'request' ? 'verify' : 'reset';
+      current.recoveryStep = step === 'request' && !supabaseApi ? 'verify' : 'reset';
       root.innerHTML = loginPage(current);
       root.querySelector('.login-card input')?.focus();
     } else if (type === 'entry') {
@@ -452,10 +492,18 @@ async function submitForm(form) {
 }
 
 document.addEventListener('click', async event => {
-  const link = event.target.closest('a[href^="/"]');
+  const skip = supabaseApi && event.target.closest('a.skip-link');
+  if (skip) {
+    event.preventDefault();
+    const content = root.querySelector('#main');
+    content.tabIndex = -1;
+    content.focus();
+    return;
+  }
+  const link = event.target.closest(supabaseApi ? 'a[href^="#/"]' : 'a[href^="/"]');
   if (link && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
     event.preventDefault();
-    await navigate(link.getAttribute('href'));
+    await navigate(supabaseApi ? link.getAttribute('href').slice(1) : link.getAttribute('href'));
     return;
   }
   const button = event.target.closest('[data-action]');

@@ -4,8 +4,10 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { createApi } from '../api.mjs';
 import { createApplication } from '../server.mjs';
 import { createPinVault } from '../credentials.mjs';
+import { createEdgeHandler } from '../edge.mjs';
 import { makePool, openPostgresStore } from '../postgres-store.mjs';
 import { daysInMonth } from '../public/sales.mjs';
 import { importSales } from '../supabase/setup.mjs';
@@ -250,7 +252,39 @@ test('Supabase schema, sales import, and PostgreSQL application storage', { skip
   assert.equal(overview.totals.live.balance, -3_000);
   assert.equal((await setup.query('SELECT count(*)::integer AS count FROM capitalbet.entries')).rows[0].count, 2);
 
+  const origin = 'https://aloet256.github.io';
+  const edgeApi = createApi({ store, pinVault, pinLength: 6, storage: 'supabase', dummyHash: hash, passwordRecovery: false,
+    adminAuth: { signIn: async password => password === fixtureAdminPassword }, bearer: true });
+  const handler = createEdgeHandler({ origin, getApi: async () => edgeApi });
+  const request = (route, { method = 'GET', token, body, requester = origin } = {}) => handler(new Request(
+    `https://project.supabase.co/functions/v1/capitalbet/api/${route}`, {
+      method, headers: { Origin: requester, 'CF-Connecting-IP': '203.0.113.9', ...(body ? { 'Content-Type': 'application/json' } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined,
+    },
+  ));
+  const preflight = await request('login/staff', { method: 'OPTIONS' });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('Access-Control-Allow-Origin'), origin);
+  assert.equal((await request('status', { requester: 'https://other.example' })).status, 403);
+  const staffLogin = await request('login/staff', { method: 'POST', body: { branchId: branch.id, pin } });
+  assert.equal(staffLogin.status, 200);
+  assert.equal(staffLogin.headers.get('Set-Cookie'), null);
+  const { token } = await staffLogin.json();
+  assert.match(token, /^[\da-f]{64}$/);
+  assert.equal((await request(`registers/live?month=${month}`, { token })).status, 200);
+  assert.equal((await request(`admin/overview?month=${month}`, { token })).status, 403);
+  assert.equal((await request('logout', { method: 'POST', token })).status, 200);
+  assert.equal((await request(`registers/live?month=${month}`, { token })).status, 401);
+  const hostedAdmin = await request('login/admin', { method: 'POST', body: { password: fixtureAdminPassword } });
+  assert.equal(hostedAdmin.status, 200);
+  assert.equal((await request(`admin/overview?month=${month}`, { token: (await hostedAdmin.json()).token })).status, 200);
+
   const now = Date.now();
+  const limit = await Promise.all(Array.from({ length: 4 }, () => store.takeAttempt('fixture-rate', 2, now, now + 1000)));
+  assert.equal(limit.filter(Boolean).length, 2);
+  await store.releaseAttempt('fixture-rate', limit.find(Boolean));
+  assert.ok(await store.takeAttempt('fixture-rate', 2, now, now + 1000));
+
   const lease = crypto.randomUUID();
   const notification = await store.claimNotification(lease, now, now + 60_000);
   assert.deepEqual(notification.payload.balances, { slots: 80_000, live: -3_000 });

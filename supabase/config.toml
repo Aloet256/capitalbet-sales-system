@@ -1,0 +1,4 @@
+project_id = "capitalbet"
+
+[functions.capitalbet]
+verify_jwt = false

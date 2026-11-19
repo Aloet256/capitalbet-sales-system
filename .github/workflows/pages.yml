@@ -1,4 +1,4 @@
-name: Publish Capitalbet entry page
+name: Publish Capitalbet app
 
 on:
   push:
@@ -6,8 +6,7 @@ on:
     paths:
       - .github/workflows/pages.yml
       - pages/**
-      - public/styles.css
-      - public/capitalbet-logo.png
+      - public/**
   workflow_dispatch:
 
 permissions:
@@ -27,7 +26,7 @@ jobs:
           node-version: '24'
       - run: node pages/build.mjs
         env:
-          CAPITALBET_APP_URL: ${{ vars.CAPITALBET_APP_URL }}
+          CAPITALBET_SUPABASE_URL: ${{ vars.CAPITALBET_SUPABASE_URL }}
       - uses: actions/upload-pages-artifact@v4
         with:
           path: dist/pages

@@ -64,7 +64,7 @@ export function today() {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-export const logo = `<span class="logo"><img src="/capitalbet-logo.png" alt="Capitalbet" width="597" height="321"></span>`;
+export const logo = `<span class="logo"><img src="${new URL('./capitalbet-logo.png', import.meta.url).pathname}" alt="Capitalbet" width="597" height="321"></span>`;
 export const errorBox = '<p class="form-error" role="alert" hidden></p>';
 export const loader = '<div class="loading" role="status" aria-busy="true"><span></span> Loading…</div>';
 

@@ -67,6 +67,18 @@ export async function openPostgresStore(pool, { notifyOnSave = false } = {}) {
     deleteSession: hash => pool.query('DELETE FROM capitalbet.sessions WHERE token_hash = $1', [hash]),
     revokeAdminSessions: () => pool.query("DELETE FROM capitalbet.sessions WHERE role = 'admin'"),
     session: async hash => sessionDetails(await lookupSession(pool, hash)),
+    async takeAttempt(key, maximum, now, expiresAt) {
+      if (Math.random() < 0.01) await pool.query('DELETE FROM capitalbet.auth_attempts WHERE expires_at <= $1', [now]);
+      const row = await first(pool, `INSERT INTO capitalbet.auth_attempts AS attempt (key, tries, expires_at)
+        VALUES ($1, 1, $4) ON CONFLICT (key) DO UPDATE
+        SET tries = CASE WHEN attempt.expires_at <= $3 THEN 1 ELSE attempt.tries + 1 END,
+            expires_at = CASE WHEN attempt.expires_at <= $3 THEN $4 ELSE attempt.expires_at END
+        WHERE attempt.expires_at <= $3 OR attempt.tries < $2
+        RETURNING expires_at`, [key, maximum, now, expiresAt]);
+      return row?.expires_at;
+    },
+    releaseAttempt: (key, expiresAt) => pool.query(`UPDATE capitalbet.auth_attempts SET tries = tries - 1
+      WHERE key = $1 AND expires_at = $2 AND tries > 0`, [key, expiresAt]),
     register(id, kind, month) {
       return postgresTransaction(pool, async client => {
         const params = [id, kind, `${month}-01`];

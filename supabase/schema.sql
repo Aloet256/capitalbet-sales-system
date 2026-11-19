@@ -23,6 +23,13 @@ CREATE TABLE IF NOT EXISTS capitalbet.sessions (
 CREATE INDEX IF NOT EXISTS capitalbet_sessions_by_branch ON capitalbet.sessions (branch_id);
 CREATE INDEX IF NOT EXISTS capitalbet_sessions_by_expiry ON capitalbet.sessions (expires_at);
 
+CREATE TABLE IF NOT EXISTS capitalbet.auth_attempts (
+  key text PRIMARY KEY,
+  tries integer NOT NULL CHECK (tries >= 0),
+  expires_at bigint NOT NULL
+);
+CREATE INDEX IF NOT EXISTS capitalbet_auth_attempts_by_expiry ON capitalbet.auth_attempts (expires_at);
+
 CREATE TABLE IF NOT EXISTS capitalbet.entries (
   branch_id integer NOT NULL REFERENCES capitalbet.branches(id),
   kind text NOT NULL CHECK (kind IN ('slots', 'live')),
@@ -47,6 +54,7 @@ CREATE INDEX IF NOT EXISTS capitalbet_notifications_by_availability ON capitalbe
 ALTER TABLE capitalbet.config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE capitalbet.branches ENABLE ROW LEVEL SECURITY;
 ALTER TABLE capitalbet.sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE capitalbet.auth_attempts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE capitalbet.entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE capitalbet.notifications ENABLE ROW LEVEL SECURITY;
 

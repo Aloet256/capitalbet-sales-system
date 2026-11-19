@@ -2,13 +2,13 @@
 
 ## Open Capitalbet
 
-Open the [Capitalbet entry page](https://aloet256.github.io/capitalbet-sales-system/) or double-click `Start Capitalbet.cmd`. After cloud setup, the page offers branch and administrator sign-in. The Node.js service and Supabase database run independently of the Windows computer.
+Open the [Capitalbet sales system](https://aloet256.github.io/capitalbet-sales-system/) or double-click `Start Capitalbet.cmd`. GitHub Pages serves the full app. Supabase runs the API, authenticates the administrator, and stores sales, sessions, and branch PINs. The system runs independently of the Windows computer.
 
 Staff can add or edit daily entries and review monthly totals. Administrators can switch between the two registers in Sales Overview, select a branch to see its daily entries, and add branches or set staff PINs in Branch Management. Changing a branch PIN ends existing staff sessions for that branch and preserves its sales entries.
 
 Each branch and register carries its previous closing balance into the next month. Each recorded day shows the running balance after adding its movement. The carry-forward continues through months with no entries and updates automatically when earlier entries are corrected.
 
-## Deploy on Render and Supabase
+## Deploy on GitHub Pages and Supabase
 
 ### Prepare Supabase and import existing sales
 
@@ -20,18 +20,18 @@ Run `npm run setup:supabase` to apply [the schema](supabase/schema.sql), import 
 
 Configure custom SMTP in Supabase Authentication and add `<p>Your Capitalbet password reset code is <strong>{{ .Token }}</strong>.</p>` to the existing Reset password email template. The setup script can verify SMTP and append the code to the template when `SUPABASE_ACCESS_TOKEN` has Auth configuration permissions. For manual setup, set `CAPITALBET_RECOVERY_READY=1` once the SMTP service and template are ready. [Supabase email templates](https://supabase.com/docs/guides/auth/auth-email-templates) and [SMTP settings](https://supabase.com/docs/guides/auth/auth-smtp).
 
-### Start the cloud service and link the entry page
+### Deploy the Supabase Edge Function
 
-1. Create a [Render Blueprint](https://dashboard.render.com/blueprints) using this GitHub repository and its `main` branch. The [Blueprint](render.yaml) provisions a paid web service that stays running between visits. Review the plan before applying it. [Render web services](https://render.com/docs/web-services) and [pricing](https://render.com/pricing).
-2. Enter the values requested by the Blueprint in Render's private environment settings, including the same `CAPITALBET_PIN_KEY` used during the import. Add `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` there to enable notifications. Keep `SUPABASE_SECRET_KEY`, `SUPABASE_ACCESS_TOKEN` and `CAPITALBET_INITIAL_ADMIN_PASSWORD` in the private setup configuration. For a custom Supabase database CA, add it as a Render secret file and set `SUPABASE_DB_CA_PATH` to that file's path.
-3. After the deploy is healthy, open its HTTPS URL and check `/` and `/admin/login`. Confirm administrator sign-in and verify that the expected branches and sales figures are present.
-4. Set the GitHub Actions repository variable `CAPITALBET_APP_URL` to the deployed HTTPS origin. Run **Publish Capitalbet entry page** from the repository's [Actions tab](https://github.com/Aloet256/capitalbet-sales-system/actions/workflows/pages.yml). Verify that both sign-in links work from the GitHub Pages address before sending staff there.
+1. Set `CAPITALBET_PIN_KEY` and `CAPITALBET_ADMIN_EMAIL` in Supabase **Edge Function Secrets**. Use the same PIN key as for the import. Supabase supplies its database URL and API keys to the function directly. Set `CAPITALBET_RECOVERY_READY=1` only after configuring the reset email.
+2. Set the GitHub repository variable `CAPITALBET_SUPABASE_URL` to the hosted Supabase project origin, such as `https://abcdefghijklmnopqrst.supabase.co`. The Pages build publishes this public URL and the browser assets.
+3. To deploy from GitHub, add the `SUPABASE_ACCESS_TOKEN` repository secret with permission to deploy Edge Functions for the project, then run [Deploy Capitalbet API to Supabase](https://github.com/Aloet256/capitalbet-sales-system/actions/workflows/supabase.yml). To deploy directly with a signed-in CLI, run `npx --yes supabase@3.2.0 functions deploy capitalbet --remote=YOUR_PROJECT_REF --use-api --yes`.
+4. Run [Publish Capitalbet app](https://github.com/Aloet256/capitalbet-sales-system/actions/workflows/pages.yml) if needed. Check staff sign-in at the public URL and administrator sign-in at `/#/admin/login` within the same GitHub Pages site. Confirm the expected branches and sales figures after signing in.
 
-Render supplies the app's public HTTPS origin and terminates TLS at its edge. If using a custom domain, set `CAPITALBET_PUBLIC_ORIGIN` to that HTTPS origin and update `CAPITALBET_APP_URL` to match. The service queues Telegram alerts for successful entries and retries failed deliveries while running in the cloud.
+The `capitalbet` function only accepts browser requests from `https://aloet256.github.io` by default. Set the `CAPITALBET_SITE_ORIGIN` Edge Function secret if you use a GitHub Pages custom origin. The application validates its own expiring session tokens and authorizes each role server-side.
 
-### Other Node.js hosts
+### Telegram notifications
 
-Build with `npm ci` and start with `npm start`. Set `CAPITALBET_TLS_CERT` and `CAPITALBET_TLS_KEY` to the certificate and key file paths for direct HTTPS. For an HTTPS reverse proxy, set `CAPITALBET_TRUST_PROXY=1` and `CAPITALBET_PUBLIC_ORIGIN` to the HTTPS origin with no trailing slash. Configure the proxy to overwrite `X-Forwarded-Proto` with `https` and `X-Forwarded-For` with the client address. Loopback proxies are recognized automatically in this mode. Set `CAPITALBET_PROXY_IPS` to a comma-separated list of additional trusted proxy addresses if required. The production process honors the host's `PORT` environment variable. Set `CAPITALBET_BIND` and `CAPITALBET_PORT` to override the default bind address or port on a self-managed host.
+Set `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and a randomly generated `CAPITALBET_CRON_SECRET` in Edge Function Secrets. Create two Supabase Vault secrets for scheduled retries. Set `capitalbet_function_url` to the project URL followed by `/functions/v1/capitalbet/cron/telegram` and `capitalbet_cron_secret` to the same cron secret. Run [the Telegram schedule](supabase/schedule-telegram.sql) in the Supabase SQL Editor. The app attempts delivery as sales arrive, and Supabase Cron retries pending alerts every minute.
 
 ## Tests
 
