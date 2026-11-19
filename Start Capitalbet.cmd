@@ -1,5 +1,2 @@
 @echo off
-setlocal
-cd /d "%~dp0"
-node server.mjs --local
-if errorlevel 1 pause
+start "" "https://aloet256.github.io/capitalbet-sales-system/"

@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { createApplication } from '../server.mjs';
 import { createPinVault } from '../credentials.mjs';
+import { makePool, openPostgresStore } from '../postgres-store.mjs';
 import { daysInMonth } from '../public/sales.mjs';
+import { importSales } from '../supabase/setup.mjs';
 
 async function listen(options) {
   const defaults = options.local ? { adminPassword: fixtureAdminPassword, initialBranchPin: '1234' } : {};
@@ -180,6 +182,85 @@ test('production requires HTTPS and issues secure cookies using configured crede
   assert.equal((await setPin('1234')).status, 400);
   assert.equal((await setPin('673519')).status, 200);
   assert.equal((await login(staff, branch.id, '673519')).status, 200);
+});
+
+test('Render health checks and forwarded HTTPS sign-in', async t => {
+  const publicOrigin = 'https://capitalbet.onrender.com';
+  const app = await listen({ filename: ':memory:', adminPassword: fixtureAdminPassword, renderProxy: true, publicOrigin });
+  t.after(app.stop);
+  assert.equal((await fetch(`${app.origin}/healthz`)).status, 204);
+
+  const plain = client(app.origin, { 'X-Forwarded-Proto': 'https' });
+  assert.equal((await plain('/api/status')).status, 403);
+  const headers = { 'X-Forwarded-Proto': 'https', 'CF-Connecting-IP': '203.0.113.42' };
+  const admin = client(app.origin, { ...headers, Origin: publicOrigin });
+  for (const path of ['/', '/admin/login']) {
+    assert.equal((await fetch(`${app.origin}${path}`, { headers })).status, 200);
+  }
+  const loginResponse = await adminLogin(admin);
+  assert.equal(loginResponse.status, 200);
+  assert.match(loginResponse.headers.get('Set-Cookie'), /^__Host-capitalbet=.*; Secure$/);
+});
+
+const testDatabase = process.env.CAPITALBET_TEST_DATABASE_URL;
+test('Supabase schema, sales import, and PostgreSQL application storage', { skip: !testDatabase }, async t => {
+  const database = new URL(testDatabase);
+  assert.equal(database.hostname, '127.0.0.1');
+  assert.equal(database.pathname, '/capitalbet_test');
+  const poolOptions = { connectionString: testDatabase, connectionTimeoutMillis: 5000 };
+  const setup = makePool(poolOptions);
+  t.after(() => setup.end());
+  const { rows: [state] } = await setup.query("SELECT to_regnamespace('capitalbet') AS existing_schema");
+  assert.equal(state.existing_schema, null, 'Use a fresh disposable database.');
+  await setup.query(await readFile(new URL('../supabase/schema.sql', import.meta.url), 'utf8'));
+  await setup.query("INSERT INTO capitalbet.config (key, value) VALUES ('admin_user_id', 'fixture-admin')");
+
+  const pinVault = createPinVault('ab'.repeat(32));
+  const name = 'MIGRATED BRANCH FIXTURE';
+  const pin = '678905';
+  const { hash, cipher } = await pinVault.protect(name, pin);
+  const snapshot = {
+    branches: [{ id: 999, name, pin_hash: hash, pin_cipher: cipher }],
+    entries: [{ branch_id: 999, kind: 'slots', day: '2028-01-31', amounts: JSON.stringify(slots), revision: 1 }],
+  };
+  const imported = await importSales(setup, snapshot, pinVault);
+  assert.equal(imported.entries, 1);
+  assert.deepEqual(await importSales(setup, snapshot, pinVault), imported);
+
+  const pool = makePool(poolOptions);
+  let app;
+  t.after(() => app ? app.stop() : pool.end());
+  const store = await openPostgresStore(pool, { notifyOnSave: true });
+  assert.equal(store.adminUserId, 'fixture-admin');
+  app = await listen({ local: true, store, pinVault, passwordRecovery: false,
+    adminAuth: { signIn: async password => password === fixtureAdminPassword } });
+  const staff = client(app.origin);
+  const admin = client(app.origin);
+  const { branches } = (await staff('/api/branches')).body;
+  assert.equal(branches.length, imported.branches);
+  const branch = branches.find(branch => branch.name === name);
+  assert.ok(branch);
+  assert.equal((await login(staff, branch.id, pin)).status, 200);
+  assert.equal((await adminLogin(admin)).status, 200);
+  assert.equal((await read(staff, 'slots')).body.totals.openingBalance, 80_000);
+  const saves = await Promise.all([save(staff, 'live', live), save(staff, 'live', live)]);
+  assert.deepEqual(saves.map(result => result.status).sort(), [200, 409]);
+  const overview = (await admin(`/api/admin/overview?month=${month}`)).body;
+  assert.equal(overview.totals.slots.balance, 80_000);
+  assert.equal(overview.totals.live.balance, -3_000);
+  assert.equal((await setup.query('SELECT count(*)::integer AS count FROM capitalbet.entries')).rows[0].count, 2);
+
+  const now = Date.now();
+  const lease = crypto.randomUUID();
+  const notification = await store.claimNotification(lease, now, now + 60_000);
+  assert.deepEqual(notification.payload.balances, { slots: 80_000, live: -3_000 });
+  await store.finishNotification(notification.id, lease, now + 1_000);
+  const nextLease = crypto.randomUUID();
+  assert.equal(await store.claimNotification(nextLease, now, now + 60_000), undefined);
+  const retry = await store.claimNotification(nextLease, now + 1_000, now + 60_000);
+  assert.equal(retry.attempts, 1);
+  await store.finishNotification(retry.id, nextLease);
+  assert.equal((await setup.query('SELECT count(*)::integer AS count FROM capitalbet.notifications')).rows[0].count, 0);
 });
 
 test('managed branch PINs are admin-only and a saved register queues a Telegram alert', async t => {

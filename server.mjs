@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { createServer as createSecureServer } from 'node:https';
+import { isIP } from 'node:net';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createAdminAuth } from './admin-recovery.mjs';
@@ -71,7 +72,7 @@ const staticFiles = new Map(Object.entries({
 const pages = new Set(['/', '/dashboard', '/slots', '/live', '/admin', '/admin/login', '/admin/forgot-password', '/admin/branches']);
 
 export async function createApplication({ filename, local = false, adminPassword, initialAdminPassword, initialBranchPin, tls, trustProxy = false,
-  proxyIps = [], publicOrigin, store: configuredStore, pinVault, adminAuth, passwordRecovery = Boolean(adminAuth), telegram } = {}) {
+  proxyIps = [], renderProxy = false, publicOrigin, store: configuredStore, pinVault, adminAuth, passwordRecovery = Boolean(adminAuth), telegram } = {}) {
   if (!configuredStore && !local && adminPassword && (adminPassword.length < 14 || adminPassword.length > 256)) {
     throw new Error('Choose a unique production administrator password with 14 to 256 characters.');
   }
@@ -81,8 +82,8 @@ export async function createApplication({ filename, local = false, adminPassword
       throw new Error('CAPITALBET_PUBLIC_ORIGIN must be an HTTPS origin with no path or credentials.');
     }
   }
-  if (!local && !tls && (!trustProxy || !publicOrigin)) {
-    throw new Error('Configure TLS or a loopback reverse proxy with a CAPITALBET_PUBLIC_ORIGIN HTTPS URL.');
+  if (!local && !tls && (!(trustProxy || renderProxy) || !publicOrigin)) {
+    throw new Error('Configure TLS or a trusted reverse proxy with a public HTTPS origin.');
   }
   const adminSeed = local ? initialAdminPassword ?? adminPassword : adminPassword;
   const [adminHash, initialPinHash, dummyHash] = await Promise.all([
@@ -318,23 +319,32 @@ export async function createApplication({ filename, local = false, adminPassword
     response.setHeader('Referrer-Policy', 'same-origin');
     response.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     try {
+      const method = request.method;
+      // Render's internal health probe can arrive directly over HTTP.
+      if (renderProxy && request.url === '/healthz' && (method === 'GET' || method === 'HEAD')) {
+        response.statusCode = 204;
+        return response.end();
+      }
       const remote = request.socket.remoteAddress;
-      const proxy = trustProxy && (proxyAddresses.has(remote) || proxyAddresses.has(remote?.replace(/^::ffff:/, '')))
-        && request.headers['x-forwarded-proto'] === 'https';
-      const encrypted = request.socket.encrypted || proxy;
+      const forwardedHttps = request.headers['x-forwarded-proto'] === 'https';
+      const proxy = forwardedHttps && trustProxy && (proxyAddresses.has(remote) || proxyAddresses.has(remote?.replace(/^::ffff:/, '')));
+      // Render's public edge overwrites CF-Connecting-IP with the caller's address.
+      const edgeAddress = request.headers['cf-connecting-ip'] ?? '';
+      const renderEdge = renderProxy && forwardedHttps && isIP(edgeAddress) !== 0;
+      const encrypted = request.socket.encrypted || proxy || renderEdge;
       requireValue(local ? loopbacks.has(remote) : encrypted, 403, local ? 'This instance is available on its own computer.' : 'HTTPS is required.');
       if (!local) response.setHeader('Strict-Transport-Security', 'max-age=31536000');
       const origin = publicOrigin ?? `${encrypted ? 'https' : 'http'}://${request.headers.host}`;
       const url = new URL(request.url, origin);
       requireValue(!local || ['127.0.0.1', 'localhost'].includes(url.hostname), 403, 'Open this instance from localhost.');
-      const method = request.method;
       if (method !== 'GET' && method !== 'HEAD') {
         requireValue(request.headers['sec-fetch-site'] !== 'cross-site' && (!request.headers.origin || request.headers.origin === origin), 403, 'Use this application to submit changes.');
       }
       if (url.pathname.startsWith('/api/')) {
         response.setHeader('Content-Type', 'application/json; charset=utf-8');
         const forwarded = proxy ? request.headers['x-forwarded-for']?.split(',').at(-1)?.trim() : null;
-        const data = await api(request, response, url, forwarded || remote);
+        const clientAddress = renderEdge ? edgeAddress : forwarded || remote;
+        const data = await api(request, response, url, clientAddress);
         return response.end(JSON.stringify(data));
       }
       requireValue(method === 'GET' || method === 'HEAD', 405, 'Method not allowed.');
@@ -364,6 +374,8 @@ async function main() {
   const cloud = !local || process.argv.includes('--supabase');
   const { CAPITALBET_TLS_CERT, CAPITALBET_TLS_KEY, CAPITALBET_DB,
     CAPITALBET_PUBLIC_ORIGIN, CAPITALBET_TRUST_PROXY, CAPITALBET_PORT } = env;
+  const renderProxy = !local && env.RENDER === 'true' && Boolean(env.RENDER_EXTERNAL_URL);
+  const publicOrigin = local ? undefined : CAPITALBET_PUBLIC_ORIGIN ?? (renderProxy ? env.RENDER_EXTERNAL_URL : undefined);
   const tls = CAPITALBET_TLS_CERT && CAPITALBET_TLS_KEY ? {
     cert: readFileSync(CAPITALBET_TLS_CERT), key: readFileSync(CAPITALBET_TLS_KEY),
   } : undefined;
@@ -380,7 +392,7 @@ async function main() {
       local, tls, filename: CAPITALBET_DB, store, adminAuth, pinVault, telegram,
       initialAdminPassword: env.CAPITALBET_INITIAL_ADMIN_PASSWORD,
       passwordRecovery: Boolean(store && (store.recoveryReady || env.CAPITALBET_RECOVERY_READY === '1')),
-      publicOrigin: local ? undefined : CAPITALBET_PUBLIC_ORIGIN, trustProxy: CAPITALBET_TRUST_PROXY === '1',
+      publicOrigin, renderProxy, trustProxy: CAPITALBET_TRUST_PROXY === '1',
       proxyIps: env.CAPITALBET_PROXY_IPS?.split(',').map(address => address.trim()).filter(Boolean),
     });
   } catch (error) {
@@ -391,7 +403,7 @@ async function main() {
   const bind = local ? '127.0.0.1' : env.CAPITALBET_BIND ?? (env.PORT ? '0.0.0.0' : '127.0.0.1');
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error('Set a valid port for Capitalbet.');
   server.listen(port, bind, () => {
-    const address = !local && CAPITALBET_PUBLIC_ORIGIN ? CAPITALBET_PUBLIC_ORIGIN : `${tls ? 'https' : 'http'}://${bind}:${server.address().port}`;
+    const address = publicOrigin ?? `${tls ? 'https' : 'http'}://${bind}:${server.address().port}`;
     console.log(`Capitalbet listening at ${address}`);
   });
 }

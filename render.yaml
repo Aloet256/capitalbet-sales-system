@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: capitalbet-sales-system
+    runtime: node
+    plan: 0.5c-512mb
+    region: frankfurt
+    branch: main
+    autoDeployTrigger: checksPass
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: '24.x'
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: CAPITALBET_ADMIN_EMAIL
+        sync: false
+      - key: CAPITALBET_PIN_KEY
+        sync: false

@@ -11,6 +11,19 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: capitalbet_test
+          POSTGRES_PASSWORD: capitalbet-fixture
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres -d capitalbet_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -19,3 +32,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+        env:
+          CAPITALBET_TEST_DATABASE_URL: postgresql://postgres:capitalbet-fixture@127.0.0.1:${{ job.services.postgres.ports[5432] }}/capitalbet_test
