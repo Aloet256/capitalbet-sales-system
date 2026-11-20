@@ -45,8 +45,12 @@ const login = (session, branchId, pin = '1234') => session('/api/login/staff', {
 const adminLogin = (session, password = fixtureAdminPassword) => session('/api/login/admin', { method: 'POST', body: { password } });
 const read = (session, kind, period = month) => session(`/api/registers/${kind}?month=${period}`);
 const save = (session, kind, values, revision = 0, day = `${month}-29`) => session(`/api/registers/${kind}/${day}`, { method: 'PUT', body: { revision, values } });
+const correct = (session, branchId, kind, day, values, revision) => session(`/api/admin/branches/${branchId}/${kind}/${day}`, {
+  method: 'PUT', body: { revision, values },
+});
 
 test('staff and administrator flows with persistent and isolated registers', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2028-02-29T20:59:00Z') });
   const directory = await mkdtemp(join(tmpdir(), 'capitalbet-local-'));
   const options = { local: true, filename: join(directory, 'database.sqlite') };
   let app = await listen(options);
@@ -117,6 +121,7 @@ test('staff and administrator flows with persistent and isolated registers', asy
 });
 
 test('closing balances carry across years, empty months and historical corrections', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2027-12-31T20:59:00Z') });
   const directory = await mkdtemp(join(tmpdir(), 'capitalbet-carry-'));
   const app = await listen({ local: true, filename: join(directory, 'database.sqlite') });
   t.after(async () => { await app.stop(); await rm(directory, { recursive: true, force: true }); });
@@ -134,6 +139,8 @@ test('closing balances carry across years, empty months and historical correctio
   assert.equal((await save(staff, 'slots', previousSlots, 0, day)).status, 200);
   assert.equal((await save(staff, 'live', live, 0, day)).status, 200);
   assert.equal((await save(other, 'slots', { ...previousSlots, totalIn: 35_000 }, 0, day)).status, 200);
+  assert.equal((await save(staff, 'slots', previousSlots, 1, day)).status, 200);
+  t.mock.timers.tick(60_000);
 
   const january = await read(staff, 'slots', '2028-01');
   assert.deepEqual(january.body.records, []);
@@ -154,10 +161,25 @@ test('closing balances carry across years, empty months and historical correctio
   assert.deepEqual(overview.branches.find(row => row.id === branch.id).entriesByRegister, { slots: 1, live: 0 });
   assert.equal(overview.branches.find(row => row.id === otherBranch.id).entries, 0);
 
-  assert.equal((await save(staff, 'slots', { ...previousSlots, totalIn: 130_000 }, 1, day)).status, 200);
+  const correction = { ...previousSlots, totalIn: 130_000 };
+  const locked = await save(staff, 'slots', correction, 2, day);
+  assert.equal(locked.status, 403);
+  assert.match(locked.body.error, /locked/);
+  assert.equal((await save(staff, 'slots', correction, 0, day)).status, 403);
+  assert.equal((await save(staff, 'live', live, 1, day)).status, 403);
+  assert.equal((await correct(staff, branch.id, 'slots', day, correction, 2)).status, 403);
+  assert.equal((await correct(admin, branch.id, 'slots', day, correction, 1)).status, 409);
+  const corrected = await correct(admin, branch.id, 'slots', day, correction, 2);
+  assert.equal(corrected.status, 200);
+  assert.equal(corrected.body.branch.id, branch.id);
+  assert.equal(corrected.body.record.revision, 3);
   const detail = (await admin(`/api/admin/branches/${branch.id}/slots?month=2028-03`)).body;
   assert.deepEqual(balances(detail.totals), [170_000, 0, 170_000]);
   assert.deepEqual(balances((await read(staff, 'slots', '2027-12')).body.totals), [0, 130_000, 130_000]);
+  const blank = '2027-12-30';
+  assert.equal((await correct(admin, branch.id, 'live', blank, live, 0)).status, 404);
+  assert.equal((await save(staff, 'live', live, 0, blank)).status, 200);
+  assert.equal((await save(staff, 'live', live, 1, blank)).status, 403);
 });
 
 test('production requires HTTPS and issues secure cookies using configured credentials', async t => {
@@ -206,6 +228,7 @@ test('Render health checks and forwarded HTTPS sign-in', async t => {
 
 const testDatabase = process.env.CAPITALBET_TEST_DATABASE_URL;
 test('Supabase schema, sales import, and PostgreSQL application storage', { skip: !testDatabase }, async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2028-02-29T20:59:00Z') });
   const database = new URL(testDatabase);
   assert.equal(database.hostname, '127.0.0.1');
   assert.equal(database.pathname, '/capitalbet_test');
@@ -273,11 +296,16 @@ test('Supabase schema, sales import, and PostgreSQL application storage', { skip
   assert.match(token, /^[\da-f]{64}$/);
   assert.equal((await request(`registers/live?month=${month}`, { token })).status, 200);
   assert.equal((await request(`admin/overview?month=${month}`, { token })).status, 403);
+  t.mock.timers.tick(60_000);
+  assert.equal((await request(`registers/live/${month}-29`, {
+    method: 'PUT', token, body: { revision: 1, values: live },
+  })).status, 403);
   assert.equal((await request('logout', { method: 'POST', token })).status, 200);
   assert.equal((await request(`registers/live?month=${month}`, { token })).status, 401);
   const hostedAdmin = await request('login/admin', { method: 'POST', body: { password: fixtureAdminPassword } });
   assert.equal(hostedAdmin.status, 200);
-  assert.equal((await request(`admin/overview?month=${month}`, { token: (await hostedAdmin.json()).token })).status, 200);
+  const adminToken = (await hostedAdmin.json()).token;
+  assert.equal((await request(`admin/overview?month=${month}`, { token: adminToken })).status, 200);
 
   const now = Date.now();
   const limit = await Promise.all(Array.from({ length: 4 }, () => store.takeAttempt('fixture-rate', 2, now, now + 1000)));
@@ -294,6 +322,13 @@ test('Supabase schema, sales import, and PostgreSQL application storage', { skip
   const retry = await store.claimNotification(nextLease, now + 1_000, now + 60_000);
   assert.equal(retry.attempts, 1);
   await store.finishNotification(retry.id, nextLease);
+  const correction = await request(`admin/branches/${branch.id}/live/${month}-29`, {
+    method: 'PUT', token: adminToken, body: { revision: 1, values: { ...live, totalIn: 25_000 } },
+  });
+  assert.equal(correction.status, 200);
+  const corrected = await correction.json();
+  assert.equal(corrected.record.revision, 2);
+  assert.equal(corrected.totals.balance, 7_000);
   assert.equal((await setup.query('SELECT count(*)::integer AS count FROM capitalbet.notifications')).rows[0].count, 0);
 });
 
