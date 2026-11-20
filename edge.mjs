@@ -32,12 +32,11 @@ export function createEdgeHandler({ origin, getApi, cronSecret, sendNotification
       const input = {
         method: request.method,
         headers: Object.fromEntries(request.headers),
-        signal: request.signal,
         async *[Symbol.asyncIterator]() { if (request.body) yield* request.body; },
       };
       const output = { statusCode: 200 };
       const api = await getApi();
-      const data = await api(input, output, url, isIP(edgeIp) ? edgeIp : 'unknown');
+      const data = await api(input, output, url, isIP(edgeIp) ? edgeIp : 'unknown', request.signal);
       return Response.json(data, { status: output.statusCode, headers });
     } catch (error) {
       if (error instanceof HttpError) return Response.json({ error: error.message }, { status: error.status, headers });

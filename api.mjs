@@ -197,7 +197,7 @@ export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLen
     }
   }
 
-  async function api(request, response, url, ip) {
+  async function api(request, response, url, ip, signal) {
     const { pathname } = url;
     const method = request.method;
     if (method === 'GET' && pathname === '/api/status') return {
@@ -260,7 +260,7 @@ export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLen
       if (method === 'GET' && pathname === '/api/admin/sales-updates') {
         const since = url.searchParams.get('since');
         requireValue(/^\d{1,19}$/.test(since ?? ''), 400, 'Choose a valid sales version.');
-        return { salesVersion: await store.watchSales(since, request.signal) };
+        return { salesVersion: await store.watchSales(since, signal) };
       }
       if (method === 'GET' && pathname === '/api/admin/overview') return store.overview(monthFrom(url));
       if (method === 'GET' && pathname === '/api/admin/branches') return { branches: await store.managedBranches() };

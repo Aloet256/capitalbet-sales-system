@@ -89,14 +89,11 @@ export async function createApplication({ filename, local = false, adminPassword
       }
       if (url.pathname.startsWith('/api/')) {
         response.setHeader('Content-Type', 'application/json; charset=utf-8');
-        if (url.pathname === '/api/admin/sales-updates') {
-          const connection = new AbortController();
-          response.once('close', () => connection.abort());
-          request.signal = connection.signal;
-        }
+        const connection = url.pathname === '/api/admin/sales-updates' ? new AbortController() : null;
+        if (connection) response.once('close', () => connection.abort());
         const forwarded = proxy ? request.headers['x-forwarded-for']?.split(',').at(-1)?.trim() : null;
         const clientAddress = renderEdge ? edgeAddress : forwarded || remote;
-        const data = await api(request, response, url, clientAddress);
+        const data = await api(request, response, url, clientAddress, connection?.signal);
         return response.end(JSON.stringify(data));
       }
       requireValue(method === 'GET' || method === 'HEAD', 405, 'Method not allowed.');
