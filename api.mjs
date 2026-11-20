@@ -124,6 +124,22 @@ export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLen
     return branch;
   }
 
+  async function saveRegister(request, branchId, kind, day, role) {
+    const month = day.slice(0, 7);
+    requireValue(validMonth(month) && daysInMonth(month).includes(day), 400, 'Choose a valid date.');
+    const data = await readJson(request);
+    requireValue(Number.isSafeInteger(data.revision) && data.revision >= 0, 400, 'Refresh the register before saving.');
+    const record = await store.saveEntry(branchId, kind, day, data.revision, validatedAmounts(kind, data.values), {
+      sessionHash: tokenHash(request), role,
+    });
+    requireValue(record !== false, 401, 'Your session has ended. Sign in again.');
+    requireValue(record !== 'locked', 403, 'This day’s entry is locked. Ask an administrator to correct it.');
+    requireValue(record !== 'missing', 404, 'No entry has been saved for this day.');
+    requireValue(record, 409, 'This entry changed in another session. Load the latest entry and try again.');
+    if (role === 'staff') wake();
+    return { record, ...await store.register(branchId, kind, month) };
+  }
+
   async function newPin(name, data, previous) {
     if (pinVault && (data.pin === undefined || data.pin === '')) return pinVault.protect(name, randomPin(previous));
     const rule = pinLength === 4 ? /^\d{4,12}$/ : /^\d{6,12}$/;
@@ -234,17 +250,8 @@ export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLen
         return store.register(session.branch.id, kind, monthFrom(url));
       }
       if (method === 'PUT' && day) {
-        await authorize(request, 'staff');
-        const month = day.slice(0, 7);
-        requireValue(validMonth(month) && daysInMonth(month).includes(day), 400, 'Choose a valid date.');
-        const data = await readJson(request);
         const session = await authorize(request, 'staff');
-        requireValue(Number.isSafeInteger(data.revision) && data.revision >= 0, 400, 'Refresh the register before saving.');
-        const record = await store.saveEntry(session.branch.id, kind, day, data.revision, validatedAmounts(kind, data.values), tokenHash(request));
-        requireValue(record !== false, 401, 'Your session has ended. Sign in again.');
-        requireValue(record, 409, 'This entry changed in another session. Load the latest entry and try again.');
-        wake();
-        return { record, ...await store.register(session.branch.id, kind, month) };
+        return saveRegister(request, session.branch.id, kind, day, 'staff');
       }
     }
 
@@ -263,10 +270,17 @@ export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLen
         response.statusCode = 201;
         return { branch };
       }
-      const branchRegister = pathname.match(/^\/api\/admin\/branches\/(\d+)\/(slots|live)$/);
-      if (method === 'GET' && branchRegister) {
-        const branch = await getBranch(branchRegister[1]);
-        return { branch: { id: branch.id, name: branch.name }, ...await store.register(branch.id, branchRegister[2], monthFrom(url)) };
+      const branchRegister = pathname.match(/^\/api\/admin\/branches\/(\d+)\/(slots|live)(?:\/(\d{4}-\d{2}-\d{2}))?$/);
+      if (branchRegister) {
+        const [, id, kind, day] = branchRegister;
+        if (method === 'GET' && !day) {
+          const branch = await getBranch(id);
+          return { branch: { id: branch.id, name: branch.name }, ...await store.register(branch.id, kind, monthFrom(url)) };
+        }
+        if (method === 'PUT' && day) {
+          const branch = await getBranch(id);
+          return { ...await saveRegister(request, branch.id, kind, day, 'admin'), branch: { id: branch.id, name: branch.name } };
+        }
       }
       const pin = pathname.match(/^\/api\/admin\/branches\/(\d+)\/pin$/);
       if (method === 'GET' && pin) {

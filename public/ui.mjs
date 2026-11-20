@@ -58,12 +58,6 @@ export const dateName = day => dateFormat.format(new Date(`${day}T00:00:00Z`));
 export const weekday = day => weekFormat.format(new Date(`${day}T00:00:00Z`));
 export const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 export const monthName = month => `${months[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`;
-const eastAfricaDateParts = new Intl.DateTimeFormat('en', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Africa/Nairobi' });
-export function today() {
-  const parts = Object.fromEntries(eastAfricaDateParts.formatToParts(new Date()).map(({ type, value }) => [type, value]));
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
 export const logo = `<span class="logo"><img src="${new URL('./capitalbet-logo.png', import.meta.url).pathname}" alt="Capitalbet" width="597" height="321"></span>`;
 export const errorBox = '<p class="form-error" role="alert" hidden></p>';
 export const loader = '<div class="loading" role="status" aria-busy="true"><span></span> Loading…</div>';

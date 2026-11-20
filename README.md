@@ -4,7 +4,7 @@
 
 Open the [Capitalbet sales system](https://aloet256.github.io/capitalbet-sales-system/) or double-click `Start Capitalbet.cmd`. GitHub Pages serves the full app. Supabase runs the API, authenticates the administrator, and stores sales, sessions, and branch PINs. The system runs independently of the Windows computer.
 
-Staff can add or edit daily entries and review monthly totals. Administrators can switch between the two registers in Sales Overview, select a branch to see its daily entries, and add branches or set staff PINs in Branch Management. Changing a branch PIN ends existing staff sessions for that branch and preserves its sales entries.
+Staff can add daily entries, edit them through the end of the entry date in East Africa Time, and review monthly totals. After midnight, an administrator can correct a saved entry by selecting its branch and register in Sales Overview and choosing **Edit** on the relevant date. Staff can fill in days that have no saved entry. Administrators can add branches and set staff PINs in Branch Management. Changing a branch PIN ends existing staff sessions for that branch and preserves its sales entries.
 
 Each branch and register carries its previous closing balance into the next month. Each recorded day shows the running balance after adding its movement. The carry-forward continues through months with no entries and updates automatically when earlier entries are corrected.
 

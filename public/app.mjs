@@ -1,7 +1,7 @@
-import { daysInMonth, registers, validMonth, withBalance } from './sales.mjs';
+import { daysInMonth, registers, today, validMonth, withBalance } from './sales.mjs';
 import {
   branchName, dateName, errorBox, escapeHtml, fieldList, groupMoneyInput, icon, loader, logo, money,
-  monthName, monthPicker, notice, number, pageHeading, parseMoneyInput, salesFigure, searchInput, today, weekday,
+  monthName, monthPicker, notice, number, pageHeading, parseMoneyInput, salesFigure, searchInput, weekday,
 } from './ui.mjs';
 
 const root = document.querySelector('#app');
@@ -188,15 +188,22 @@ function salesCell(key, value) {
   return `<td class="${key === 'balance' ? 'balance-cell' : ''} ${value < 0 ? 'negative' : ''}">${formatted}</td>`;
 }
 
+function entryAction(day, record, staff, currentDay) {
+  if (!staff && !record) return '';
+  if (staff && record && day < currentDay) return '<span class="entry-locked">Locked</span>';
+  const label = record ? 'Edit' : 'Add';
+  return `<button type="button" class="row-btn" data-action="edit-entry" data-day="${day}" aria-label="${label} entry for ${dateName(day)}">${icon(record ? 'edit' : 'plus', 16)}<span>${label}</span></button>`;
+}
+
 function registerView(state) {
   const { kind, month, data } = state;
-  const edit = state.type === 'register';
+  const staff = state.type === 'register';
   const fields = [['balance', 'Running Balance'], ['monthlyMovement', 'Daily Movement'], ...registers[kind].fields];
   const days = daysInMonth(month);
   const currentDay = today();
   const rows = new Map(data.records.map(record => [record.day, record]));
   const balanceFormula = kind === 'slots' ? 'Daily movement = Total In + Cash In − Total Out − Expenses − Cash Out − Free Coupons' : 'Daily movement = Total In − Total Out';
-  const actions = edit ? `<button class="btn primary" data-action="pick-entry">${icon('plus', 18)} Add entry</button>` : '';
+  const actions = staff ? `<button class="btn primary" data-action="pick-entry">${icon('plus', 18)} Add entry</button>` : '';
   let runningBalance = data.totals.openingBalance;
   const body = days.map(day => {
     const record = rows.get(day);
@@ -208,18 +215,18 @@ function registerView(state) {
     return `<tr class="${day === currentDay ? 'current-day' : ''}">
       <th scope="row"><span class="date-day">${day.slice(-2)}</span><span class="date-weekday">${weekday(day)}</span></th>
       ${fields.map(([key]) => salesCell(key, values?.[key])).join('')}
-      ${edit ? `<td class="day-action"><button type="button" class="row-btn" data-action="edit-entry" data-day="${day}" aria-label="${record ? 'Edit' : 'Add'} entry for ${dateName(day)}">${icon(record ? 'edit' : 'plus', 16)}<span>${record ? 'Edit' : 'Add'}</span></button></td>` : ''}
+      <td class="day-action">${entryAction(day, record, staff, currentDay)}</td>
     </tr>`;
   }).join('');
-  const back = edit ? '' : `<a class="back-link" href="${routeHref(overviewUrl(month, kind))}">Sales overview</a>`;
-  const tabs = edit ? '' : registerTabs(kind, month, `/admin/branches/${state.id}`);
-  const description = edit ? registers[kind].description : `${branchName(data.branch.name)} · Read-only daily sales register`;
+  const back = staff ? '' : `<a class="back-link" href="${routeHref(overviewUrl(month, kind))}">Sales overview</a>`;
+  const tabs = staff ? '' : registerTabs(kind, month, `/admin/branches/${state.id}`);
+  const description = staff ? registers[kind].description : branchName(data.branch.name);
   return `${back}${pageHeading(`${registers[kind].title} Monthly Sales Register`, description, monthPicker(month))}${tabs}
     <section class="monthly-totals"><div class="section-heading"><h2>Monthly totals</h2><span>${monthName(month)}</span></div>${totalCards(kind, data.totals)}</section>
-    <section class="panel table-panel"><div class="table-title"><div><h2>Daily entries</h2><p>${data.records.length} of ${days.length} days recorded</p></div>${actions}</div>
-      <div class="table-scroll" tabindex="0" role="region" aria-label="Daily ${registers[kind].title} entries"><table class="register-table ${kind}"><thead><tr><th scope="col">Date</th>${fields.map(([, label]) => `<th scope="col">${label}</th>`).join('')}${edit ? '<th scope="col" class="day-action">Action</th>' : ''}</tr></thead><tbody>${body}</tbody>
-      <tfoot><tr class="opening-total"><th scope="row">Opening balance</th>${salesCell('balance', data.totals.openingBalance)}<td colspan="${fields.length - 1 + Number(edit)}"></td></tr>
-      <tr><th scope="row">Monthly total</th>${fields.map(([key]) => salesCell(key, data.totals[key])).join('')}${edit ? '<td></td>' : ''}</tr></tfoot></table></div>
+    <section class="panel table-panel"><div class="table-title"><div><h2>Daily entries</h2><p>${data.records.length} of ${days.length} days recorded${staff ? ' · Only an administrator can edit locked entries.' : ''}</p></div>${actions}</div>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Daily ${registers[kind].title} entries"><table class="register-table ${kind}"><thead><tr><th scope="col">Date</th>${fields.map(([, label]) => `<th scope="col">${label}</th>`).join('')}<th scope="col" class="day-action">Action</th></tr></thead><tbody>${body}</tbody>
+      <tfoot><tr class="opening-total"><th scope="row">Opening balance</th>${salesCell('balance', data.totals.openingBalance)}<td colspan="${fields.length}"></td></tr>
+      <tr><th scope="row">Monthly total</th>${fields.map(([key]) => salesCell(key, data.totals[key])).join('')}<td></td></tr></tfoot></table></div>
       <p class="table-note">${balanceFormula}. Running balance includes the opening balance and daily movement to date.</p>
     </section>`;
 }
@@ -340,13 +347,23 @@ function editorActions(label) {
   return `${errorBox}<div class="dialog-actions"><button class="btn secondary" type="button" data-action="close">Cancel</button><button class="btn primary" type="submit">${label}</button></div>`;
 }
 
-function entryEditor(day, chooseDate = false) {
-  const { kind, month, data } = current;
+function staffEntryDays({ month, data }) {
+  const currentDay = today();
+  const locked = new Set(data.records.filter(record => record.day < currentDay).map(record => record.day));
+  return daysInMonth(month).filter(day => !locked.has(day));
+}
+
+function entryEditor(day, available) {
+  const { kind, data } = current;
   const record = data.records.find(entry => entry.day === day);
+  if (current.type === 'register' && record && day < today()) {
+    notify('This day’s entry is locked. Ask an administrator to correct it.', false);
+    return;
+  }
+  if (current.type === 'detail' && !record) return;
   const priorBalance = data.records.reduce((balance, entry) => entry.day < day ? balance + entry.values.balance : balance, data.totals.openingBalance);
   const dailyMovement = record?.values.balance ?? 0;
-  const available = daysInMonth(month);
-  const date = chooseDate ? `<label for="entry-day">Entry date</label><select id="entry-day" name="day">${available.map(value => `<option value="${value}" ${value === day ? 'selected' : ''}>${dateName(value)}</option>`).join('')}</select>` : '';
+  const date = available ? `<label for="entry-day">Entry date</label><select id="entry-day" name="day">${available.map(value => `<option value="${value}" ${value === day ? 'selected' : ''}>${dateName(value)}</option>`).join('')}</select>` : '';
   const fields = registers[kind].fields.map(([key, label]) => {
     const value = record?.values[key];
     if (key === 'tickets') return `<label>${label}<input name="${key}" type="number" step="1" min="0" max="1000000000" inputmode="numeric" value="${value ?? ''}" placeholder="0"></label>`;
@@ -358,7 +375,7 @@ function entryEditor(day, chooseDate = false) {
       <div class="entry-movement"><span>Daily movement</span><output data-movement>${money(dailyMovement)}</output></div>
       <div class="balance-preview"><span>Running balance</span><output data-running-balance>${money(priorBalance + dailyMovement)}</output></div>
       <button type="button" class="row-btn reload-entry" data-action="reload-entry" hidden>Load latest entry</button>${editorActions('Save entry')}</form>`);
-  editor.querySelector(chooseDate ? '#entry-day' : '.entry-grid input').focus();
+  editor.querySelector(available ? '#entry-day' : '.entry-grid input').focus();
 }
 
 function branchEditor(branch) {
@@ -455,11 +472,13 @@ async function submitForm(form) {
     } else if (type === 'entry') {
       const state = current;
       const { day, revision } = form.dataset;
-      const { records, totals } = await api(`registers/${state.kind}/${day}`, { method: 'PUT', body: {
+      const admin = state.type === 'detail';
+      const registerPath = admin ? `admin/branches/${state.id}` : 'registers';
+      const entry = await api(`${registerPath}/${state.kind}/${day}`, { method: 'PUT', body: {
         revision: Number(revision), values: amountsFor(form, state.kind),
       } });
       if (current === state) {
-        state.data = { records, totals };
+        state.data = entry;
         if (form.isConnected) editor.close();
         root.innerHTML = shell(state, registerView(state));
         root.querySelector(`[data-day="${day}"]`)?.focus({ preventScroll: true });
@@ -534,10 +553,11 @@ document.addEventListener('click', async event => {
       return;
     }
     case 'pick-entry': {
-      const days = daysInMonth(current.month);
+      const days = staffEntryDays(current);
+      if (!days.length) return notify('All entries for this month are locked.', false);
       const date = today();
       const day = days.includes(date) ? date : days.find(value => !current.data.records.some(record => record.day === value)) ?? days[0];
-      return entryEditor(day, true);
+      return entryEditor(day, days);
     }
     case 'edit-entry': return entryEditor(button.dataset.day);
     case 'new-branch': return branchEditor();
@@ -557,7 +577,7 @@ document.addEventListener('click', async event => {
       const { day } = button.form.dataset;
       const chooseDate = Boolean(button.form.elements.day);
       await loadPage();
-      if (editor.open && current.type === 'register') entryEditor(day, chooseDate);
+      if (editor.open && current.data && ['register', 'detail'].includes(current.type)) entryEditor(day, chooseDate ? staffEntryDays(current) : undefined);
       return;
     }
   }
@@ -572,7 +592,7 @@ document.addEventListener('submit', event => {
 document.addEventListener('change', event => {
   const form = event.target.form;
   if (form?.dataset.form === 'period' && form.checkValidity()) applyPeriod(form);
-  if (event.target.id === 'entry-day') entryEditor(event.target.value, true);
+  if (event.target.id === 'entry-day') entryEditor(event.target.value, staffEntryDays(current));
 });
 
 document.addEventListener('input', event => {

@@ -175,6 +175,7 @@ tfoot th, tfoot td { padding-top: .7rem; padding-bottom: .7rem; font-weight: 750
 .opening-total th, .opening-total td { background-color: #fafafd; }
 .table-note { color: var(--muted); padding: .75rem 1.05rem; font-size: .875rem; }
 .day-action, .row-actions { text-align: right; }
+.entry-locked { color: var(--muted); font-size: .875rem; }
 .row-actions .row-btn + .row-btn { margin-left: .4rem; }
 .back-link { display: inline-block; margin-bottom: .55rem; }
 .tabs { display: flex; gap: .38rem; margin-bottom: .85rem; }

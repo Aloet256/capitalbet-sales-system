@@ -1,5 +1,5 @@
 import pg from 'pg';
-import { withBalance } from './public/sales.mjs';
+import { today, withBalance } from './public/sales.mjs';
 import { managedBranch, notificationPayload, overviewReport, publicBranch, registerReport, sessionDetails } from './reports.mjs';
 
 export function makePool(options) {
@@ -89,19 +89,21 @@ export async function openPostgresStore(pool, { notifyOnSave = false } = {}) {
         return registerReport(kind, entries, Number(opening.balance));
       }, true);
     },
-    saveEntry(id, kind, day, revision, values, sessionHash) {
+    saveEntry(id, kind, day, revision, values, { sessionHash, role }) {
       return postgresTransaction(pool, async client => {
         const branch = await first(client, `${branchSql} FOR UPDATE`, [id]);
         const session = branch && await lookupSession(client, sessionHash);
-        if (!session || session.role !== 'staff' || session.branch_id !== id) return false;
-        const current = await first(client, 'SELECT revision FROM capitalbet.entries WHERE branch_id = $1 AND kind = $2 AND day = $3', [id, kind, day]);
-        if ((current?.revision ?? 0) !== revision) return null;
+        if (!session || session.role !== role || (role === 'staff' && session.branch_id !== id)) return false;
+        const entry = await first(client, 'SELECT revision FROM capitalbet.entries WHERE branch_id = $1 AND kind = $2 AND day = $3', [id, kind, day]);
+        if (role === 'staff' && entry && day < today()) return 'locked';
+        if (role === 'admin' && !entry) return 'missing';
+        if ((entry?.revision ?? 0) !== revision) return null;
         const result = withBalance(kind, values);
         await client.query(`INSERT INTO capitalbet.entries (branch_id, kind, day, amounts, net_balance, revision)
           VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (branch_id, kind, day) DO UPDATE
           SET amounts = excluded.amounts, net_balance = excluded.net_balance, revision = excluded.revision`,
           [id, kind, day, JSON.stringify(values), result.balance, revision + 1]);
-        if (notifyOnSave) {
+        if (notifyOnSave && role === 'staff') {
           const balances = await rows(client, `SELECT kind, SUM(net_balance) AS balance FROM capitalbet.entries
             WHERE branch_id = $1 AND day <= $2 GROUP BY kind`, [id, day]);
           const payload = notificationPayload(branch.name, day, kind, balances);

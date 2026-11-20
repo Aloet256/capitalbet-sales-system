@@ -17,6 +17,12 @@ export const registers = {
 export const validMonth = month => typeof month === 'string' && /^(19\d{2}|2\d{3})-(0[1-9]|1[0-2])$/.test(month);
 export const isRegister = type => Object.hasOwn(registers, type);
 
+const eastAfricaDateParts = new Intl.DateTimeFormat('en', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Africa/Nairobi' });
+export function today() {
+  const parts = Object.fromEntries(eastAfricaDateParts.formatToParts(new Date()).map(({ type, value }) => [type, value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
 export function daysInMonth(month) {
   const [year, index] = month.split('-').map(Number);
   const days = new Date(Date.UTC(year, index, 0)).getUTCDate();

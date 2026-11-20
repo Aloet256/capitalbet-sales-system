@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { branchNames } from './branches.mjs';
-import { withBalance } from './public/sales.mjs';
+import { today, withBalance } from './public/sales.mjs';
 import { managedBranch, notificationPayload, overviewReport, publicBranch, registerReport, sessionDetails } from './reports.mjs';
 
 export function openStore(filename, { local, adminHash, initialPinHash, notifyOnSave = false }) {
@@ -175,14 +175,16 @@ export function openStore(filename, { local, adminHash, initialPinHash, notifyOn
         return registerReport(kind, branchEntries.all(id, kind, firstDay, lastDay), opening);
       }, { write: false });
     },
-    saveEntry(id, kind, day, revision, values, sessionHash) {
+    saveEntry(id, kind, day, revision, values, { sessionHash, role }) {
       return transaction(() => {
         const session = sessionHash && getSession.get(sessionHash, Date.now());
-        if (!session || session.role !== 'staff' || session.branch_id !== id) return false;
-        const current = entryVersion.get(id, kind, day)?.revision ?? 0;
-        if (current !== revision) return null;
+        if (!session || session.role !== role || (role === 'staff' && session.branch_id !== id)) return false;
+        const entry = entryVersion.get(id, kind, day);
+        if (role === 'staff' && entry && day < today()) return 'locked';
+        if (role === 'admin' && !entry) return 'missing';
+        if ((entry?.revision ?? 0) !== revision) return null;
         writeEntry.run(id, kind, day, JSON.stringify(values), revision + 1);
-        if (notifyOnSave) {
+        if (notifyOnSave && role === 'staff') {
           const payload = notificationPayload(session.branch_name, day, kind, branchBalances.all(id, day));
           queueNotification.run(JSON.stringify(payload), Date.now());
         }
