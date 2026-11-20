@@ -1,9 +1,11 @@
 import { DatabaseSync } from 'node:sqlite';
+import { EventEmitter } from 'node:events';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { branchNames } from './branches.mjs';
 import { today, withBalance } from './public/sales.mjs';
 import { managedBranch, notificationPayload, overviewReport, publicBranch, registerReport, sessionDetails } from './reports.mjs';
+import { waitForSalesChange } from './sales-updates.mjs';
 
 export function openStore(filename, { local, adminHash, initialPinHash, notifyOnSave = false }) {
   mkdirSync(dirname(filename), { recursive: true });
@@ -56,6 +58,10 @@ export function openStore(filename, { local, adminHash, initialPinHash, notifyOn
   });
 
   const getConfig = db.prepare('SELECT value FROM config WHERE key = ?');
+  const salesChanges = new EventEmitter().setMaxListeners(0);
+  const salesVersion = () => getConfig.get('sales_version')?.value ?? '0';
+  const advanceSalesVersion = db.prepare(`INSERT INTO config (key, value) VALUES ('sales_version', '1')
+    ON CONFLICT (key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)`);
   const addConfig = db.prepare('INSERT INTO config (key, value) VALUES (?, ?)');
   const setConfig = db.prepare('UPDATE config SET value = ? WHERE key = ?');
   const getBranch = db.prepare('SELECT id, name, pin_hash, pin_cipher FROM branches WHERE id = ?');
@@ -168,15 +174,17 @@ export function openStore(filename, { local, adminHash, initialPinHash, notifyOn
     deleteSession: tokenHash => revokeSession.run(tokenHash),
     revokeAdminSessions: () => revokeAdmins.run(),
     session: tokenHash => sessionDetails(getSession.get(tokenHash, Date.now())),
-    register(id, kind, month) {
+    watchSales: (since, signal) => waitForSalesChange(since, salesVersion, salesChanges, signal),
+    register(id, kind, month, { includeSalesVersion = false } = {}) {
       return transaction(() => {
         const [firstDay, lastDay] = bounds(month);
         const opening = branchOpening.get(id, kind, firstDay).balance;
-        return registerReport(kind, branchEntries.all(id, kind, firstDay, lastDay), opening);
+        const report = registerReport(kind, branchEntries.all(id, kind, firstDay, lastDay), opening);
+        return includeSalesVersion ? { ...report, salesVersion: salesVersion() } : report;
       }, { write: false });
     },
     saveEntry(id, kind, day, revision, values, { sessionHash, role }) {
-      return transaction(() => {
+      const saved = transaction(() => {
         const session = sessionHash && getSession.get(sessionHash, Date.now());
         if (!session || session.role !== role || (role === 'staff' && session.branch_id !== id)) return false;
         const entry = entryVersion.get(id, kind, day);
@@ -184,17 +192,21 @@ export function openStore(filename, { local, adminHash, initialPinHash, notifyOn
         if (role === 'admin' && !entry) return 'missing';
         if ((entry?.revision ?? 0) !== revision) return null;
         writeEntry.run(id, kind, day, JSON.stringify(values), revision + 1);
+        advanceSalesVersion.run();
+        const result = withBalance(kind, values);
         if (notifyOnSave && role === 'staff') {
-          const payload = notificationPayload(session.branch_name, day, kind, branchBalances.all(id, day));
+          const payload = notificationPayload(session.branch_name, day, kind, branchBalances.all(id, day), result.balance, Boolean(entry));
           queueNotification.run(JSON.stringify(payload), Date.now());
         }
-        return { day, revision: revision + 1, values: withBalance(kind, values) };
+        return { day, revision: revision + 1, values: result };
       });
+      if (saved?.revision) salesChanges.emit('change');
+      return saved;
     },
     overview(month) {
       return transaction(() => {
         const [firstDay, lastDay] = bounds(month);
-        return overviewReport(list.all(), allEntries.all(firstDay, lastDay), allOpenings.all(firstDay));
+        return { ...overviewReport(list.all(), allEntries.all(firstDay, lastDay), allOpenings.all(firstDay)), salesVersion: salesVersion() };
       }, { write: false });
     },
     claimNotification(lease, now, until) {

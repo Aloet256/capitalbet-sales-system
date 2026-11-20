@@ -32,6 +32,7 @@ export function createEdgeHandler({ origin, getApi, cronSecret, sendNotification
       const input = {
         method: request.method,
         headers: Object.fromEntries(request.headers),
+        signal: request.signal,
         async *[Symbol.asyncIterator]() { if (request.body) yield* request.body; },
       };
       const output = { statusCode: 200 };

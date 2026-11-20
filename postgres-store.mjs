@@ -1,6 +1,8 @@
 import pg from 'pg';
+import { EventEmitter } from 'node:events';
 import { today, withBalance } from './public/sales.mjs';
 import { managedBranch, notificationPayload, overviewReport, publicBranch, registerReport, sessionDetails } from './reports.mjs';
+import { waitForSalesChange } from './sales-updates.mjs';
 
 export function makePool(options) {
   const pool = new pg.Pool(options);
@@ -31,6 +33,7 @@ export async function openPostgresStore(pool, { notifyOnSave = false } = {}) {
   const sessionSql = `SELECT s.role, s.branch_id, b.name AS branch_name FROM capitalbet.sessions s
     LEFT JOIN capitalbet.branches b ON b.id = s.branch_id WHERE s.token_hash = $1 AND s.expires_at > $2`;
   const lookupSession = (client, token) => first(client, sessionSql, [token, Date.now()]);
+  const salesVersion = async client => (await first(client, "SELECT value FROM capitalbet.config WHERE key = 'sales_version'"))?.value ?? '0';
   const setting = await first(pool, "SELECT value FROM capitalbet.config WHERE key = 'admin_user_id'");
   if (!setting) throw new Error('Run the Supabase setup script before starting the app.');
   const recovery = await first(pool, "SELECT value FROM capitalbet.config WHERE key = 'recovery_ready'");
@@ -79,14 +82,30 @@ export async function openPostgresStore(pool, { notifyOnSave = false } = {}) {
     },
     releaseAttempt: (key, expiresAt) => pool.query(`UPDATE capitalbet.auth_attempts SET tries = tries - 1
       WHERE key = $1 AND expires_at = $2 AND tries > 0`, [key, expiresAt]),
-    register(id, kind, month) {
+    async watchSales(since, signal) {
+      const version = await salesVersion(pool);
+      if (version !== since || signal?.aborted) return version;
+      const listener = new pg.Client(pool.options);
+      const changes = new EventEmitter();
+      listener.on('notification', () => changes.emit('change'));
+      listener.on('error', () => changes.emit('change'));
+      try {
+        await listener.connect();
+        await listener.query('LISTEN capitalbet_sales');
+        return await waitForSalesChange(since, () => salesVersion(pool), changes, signal);
+      } finally {
+        await listener.end().catch(() => {});
+      }
+    },
+    register(id, kind, month, { includeSalesVersion = false } = {}) {
       return postgresTransaction(pool, async client => {
         const params = [id, kind, `${month}-01`];
         const opening = await first(client, `SELECT COALESCE(SUM(net_balance),0) AS balance FROM capitalbet.entries
           WHERE branch_id = $1 AND kind = $2 AND day < $3::date`, params);
         const entries = await rows(client, `SELECT to_char(day, 'YYYY-MM-DD') AS day, amounts, revision FROM capitalbet.entries
           WHERE branch_id = $1 AND kind = $2 AND day >= $3::date AND day < $3::date + INTERVAL '1 month' ORDER BY day`, params);
-        return registerReport(kind, entries, Number(opening.balance));
+        const report = registerReport(kind, entries, Number(opening.balance));
+        return includeSalesVersion ? { ...report, salesVersion: await salesVersion(client) } : report;
       }, true);
     },
     saveEntry(id, kind, day, revision, values, { sessionHash, role }) {
@@ -103,10 +122,15 @@ export async function openPostgresStore(pool, { notifyOnSave = false } = {}) {
           VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (branch_id, kind, day) DO UPDATE
           SET amounts = excluded.amounts, net_balance = excluded.net_balance, revision = excluded.revision`,
           [id, kind, day, JSON.stringify(values), result.balance, revision + 1]);
+        await client.query(`WITH updated AS (
+          INSERT INTO capitalbet.config AS counter (key, value) VALUES ('sales_version', '1')
+          ON CONFLICT (key) DO UPDATE SET value = (counter.value::bigint + 1)::text
+          RETURNING value
+        ) SELECT pg_notify('capitalbet_sales', value) FROM updated`);
         if (notifyOnSave && role === 'staff') {
           const balances = await rows(client, `SELECT kind, SUM(net_balance) AS balance FROM capitalbet.entries
             WHERE branch_id = $1 AND day <= $2 GROUP BY kind`, [id, day]);
-          const payload = notificationPayload(branch.name, day, kind, balances);
+          const payload = notificationPayload(branch.name, day, kind, balances, result.balance, Boolean(entry));
           await client.query('INSERT INTO capitalbet.notifications (payload, available_at) VALUES ($1,$2)', [JSON.stringify(payload), Date.now()]);
         }
         return { day, revision: revision + 1, values: result };
@@ -120,7 +144,7 @@ export async function openPostgresStore(pool, { notifyOnSave = false } = {}) {
           WHERE day >= $1::date AND day < $1::date + INTERVAL '1 month'`, firstDay);
         const openings = await rows(client, `SELECT branch_id, kind, SUM(net_balance) AS balance FROM capitalbet.entries
           WHERE day < $1::date GROUP BY branch_id, kind`, firstDay);
-        return overviewReport(branches, entries, openings);
+        return { ...overviewReport(branches, entries, openings), salesVersion: await salesVersion(client) };
       }, true);
     },
     claimNotification(lease, now, until) {

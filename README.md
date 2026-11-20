@@ -6,6 +6,8 @@ Open the [Capitalbet sales system](https://aloet256.github.io/capitalbet-sales-s
 
 Staff can add daily entries, edit them through the end of the entry date in East Africa Time, and review monthly totals. After midnight, an administrator can correct a saved entry by selecting its branch and register in Sales Overview and choosing **Edit** on the relevant date. Staff can fill in days that have no saved entry. Administrators can add branches and set staff PINs in Branch Management. Changing a branch PIN ends existing staff sessions for that branch and preserves its sales entries.
 
+Sales Overview and individual branch registers update as entries are saved while the administrator has the page open.
+
 Each branch and register carries its previous closing balance into the next month. Each recorded day shows the running balance after adding its movement. The carry-forward continues through months with no entries and updates automatically when earlier entries are corrected.
 
 ## Deploy on GitHub Pages and Supabase
@@ -31,7 +33,7 @@ The `capitalbet` function only accepts browser requests from `https://aloet256.g
 
 ### Telegram notifications
 
-Set `CAPITALBET_TELEGRAM_BOT_TOKEN`, `CAPITALBET_TELEGRAM_CHAT_ID`, and a randomly generated `CAPITALBET_CRON_SECRET` in Edge Function Secrets. Create two Supabase Vault secrets for scheduled retries. Set `capitalbet_function_url` to the project URL followed by `/functions/v1/capitalbet/cron/telegram` and `capitalbet_cron_secret` to the same cron secret. Run [the Telegram schedule](supabase/schedule-telegram.sql) in the Supabase SQL Editor. The app attempts delivery as sales arrive, and Supabase Cron retries pending alerts every minute.
+Set `CAPITALBET_TELEGRAM_BOT_TOKEN`, `CAPITALBET_TELEGRAM_CHAT_ID`, and a randomly generated `CAPITALBET_CRON_SECRET` in Edge Function Secrets. Create two Supabase Vault secrets for scheduled retries. Set `capitalbet_function_url` to the project URL followed by `/functions/v1/capitalbet/cron/telegram` and `capitalbet_cron_secret` to the same cron secret. Run [the Telegram schedule](supabase/schedule-telegram.sql) in the Supabase SQL Editor. Alerts identify new and updated staff entries, with the daily movement and the running balances through the entry date. Supabase Cron retries pending alerts every minute.
 
 ## Tests
 

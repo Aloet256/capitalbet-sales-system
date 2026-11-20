@@ -1,13 +1,17 @@
 import { randomUUID } from 'node:crypto';
+import { registers } from './public/sales.mjs';
 import { dateName, money } from './public/ui.mjs';
 
-export function salesMessage({ branch, day, kind, balances }) {
-  const register = kind === 'slots' ? 'Slots' : 'Live-in-Play';
+export function salesMessage({ branch, day, kind, balances, movement, updated }) {
+  const action = updated === undefined ? 'saved' : updated ? 'updated' : 'submitted';
   return [
-    `${branch} filled in ${register} figures.`,
-    `Date: ${dateName(day)}`,
-    `Slots balance: ${money(balances.slots ?? 0)}`,
-    `Live-in-Play balance: ${money(balances.live ?? 0)}`,
+    `${branch} · ${registers[kind].title} entry ${action}`,
+    `Entry date · ${dateName(day)}`,
+    ...(movement === undefined ? [] : [`Daily movement · ${money(movement)}`]),
+    '',
+    'Running balances through the entry date',
+    `Slots · ${money(balances.slots ?? 0)}`,
+    `Live-in-Play · ${money(balances.live ?? 0)}`,
   ].join('\n');
 }
 

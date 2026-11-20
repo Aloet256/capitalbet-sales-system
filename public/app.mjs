@@ -15,6 +15,7 @@ let version = 0;
 let toastTimeout;
 let status;
 let sessionToken;
+let salesWatch;
 if (supabaseApi) {
   try { sessionToken = sessionStorage.getItem(sessionKey); } catch { /* Storage may be unavailable. */ }
 }
@@ -222,10 +223,10 @@ function registerView(state) {
   const tabs = staff ? '' : registerTabs(kind, month, `/admin/branches/${state.id}`);
   const description = staff ? registers[kind].description : branchName(data.branch.name);
   return `${back}${pageHeading(`${registers[kind].title} Monthly Sales Register`, description, monthPicker(month))}${tabs}
-    <section class="monthly-totals"><div class="section-heading"><h2>Monthly totals</h2><span>${monthName(month)}</span></div>${totalCards(kind, data.totals)}</section>
-    <section class="panel table-panel"><div class="table-title"><div><h2>Daily entries</h2><p>${data.records.length} of ${days.length} days recorded${staff ? ' · Only an administrator can edit locked entries.' : ''}</p></div>${actions}</div>
-      <div class="table-scroll" tabindex="0" role="region" aria-label="Daily ${registers[kind].title} entries"><table class="register-table ${kind}"><thead><tr><th scope="col">Date</th>${fields.map(([, label]) => `<th scope="col">${label}</th>`).join('')}<th scope="col" class="day-action">Action</th></tr></thead><tbody>${body}</tbody>
-      <tfoot><tr class="opening-total"><th scope="row">Opening balance</th>${salesCell('balance', data.totals.openingBalance)}<td colspan="${fields.length}"></td></tr>
+    <section class="monthly-totals" data-sales-part="totals"><div class="section-heading"><h2>Monthly totals</h2><span>${monthName(month)}</span></div>${totalCards(kind, data.totals)}</section>
+    <section class="panel table-panel"><div class="table-title"><div><h2>Daily entries</h2><p data-sales-part="count">${data.records.length} of ${days.length} days recorded${staff ? ' · Only an administrator can edit locked entries.' : ''}</p></div>${actions}</div>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Daily ${registers[kind].title} entries"><table class="register-table ${kind}"><thead><tr><th scope="col">Date</th>${fields.map(([, label]) => `<th scope="col">${label}</th>`).join('')}<th scope="col" class="day-action">Action</th></tr></thead><tbody data-sales-part="rows">${body}</tbody>
+      <tfoot data-sales-part="closing"><tr class="opening-total"><th scope="row">Opening balance</th>${salesCell('balance', data.totals.openingBalance)}<td colspan="${fields.length}"></td></tr>
       <tr><th scope="row">Monthly total</th>${fields.map(([key]) => salesCell(key, data.totals[key])).join('')}<td></td></tr></tfoot></table></div>
       <p class="table-note">${balanceFormula}. Running balance includes the opening balance and daily movement to date.</p>
     </section>`;
@@ -260,10 +261,10 @@ function overview(state) {
   const fields = fieldList(kind);
   return `${pageHeading(`${register.title} Sales Overview`, 'Review monthly sales figures across all Capitalbet branches.', monthPicker(month))}
     ${registerTabs(kind, month, '/admin')}
-    <div class="overview-cards">${meta.map(([label, value, glyph, theme]) => `<article class="panel overview-card"><span class="metric-icon ${theme}">${icon(glyph, 21)}</span><p>${label}</p><strong>${value}</strong></article>`).join('')}</div>
+    <div class="overview-cards" data-sales-part="totals">${meta.map(([label, value, glyph, theme]) => `<article class="panel overview-card"><span class="metric-icon ${theme}">${icon(glyph, 21)}</span><p>${label}</p><strong>${value}</strong></article>`).join('')}</div>
     <section class="panel table-panel"><div class="table-title"><div><h2>Branch sales</h2><p>${monthName(month)}</p></div>${searchInput('Search branches')}</div>
       <div class="table-scroll" tabindex="0" role="region" aria-label="${register.title} branch sales"><table class="overview-table ${kind}"><thead><tr><th scope="col">Branch</th>${fields.map(([key, label]) => `<th scope="col">${key === 'balance' ? 'Closing Balance' : label}</th>`).join('')}<th scope="col">Details</th></tr></thead>
-      <tbody id="branch-rows">${salesRows(state)}</tbody><tfoot><tr><th scope="row">All branches total</th>${fields.map(([key]) => salesCell(key, totals[key])).join('')}<td></td></tr></tfoot></table></div>
+      <tbody id="branch-rows" data-sales-part="rows">${salesRows(state, state.search)}</tbody><tfoot data-sales-part="closing"><tr><th scope="row">All branches total</th>${fields.map(([key]) => salesCell(key, totals[key])).join('')}<td></td></tr></tfoot></table></div>
     </section>`;
 }
 
@@ -282,8 +283,58 @@ function manageBranches(state) {
     </section>`;
 }
 
+function adminSalesPath(state) {
+  const path = state.type === 'overview' ? 'admin/overview' : `admin/branches/${state.id}/${state.kind}`;
+  return `${path}?month=${state.month}`;
+}
+
+function renderSalesUpdate(state) {
+  const draft = document.createElement('template');
+  draft.innerHTML = state.type === 'overview' ? overview(state) : registerView(state);
+  for (const part of draft.content.querySelectorAll('[data-sales-part]')) {
+    const target = root.querySelector(`[data-sales-part="${part.dataset.salesPart}"]`);
+    if (target.innerHTML === part.innerHTML) continue;
+    const focused = target.contains(document.activeElement) ? document.activeElement : null;
+    target.replaceChildren(...part.childNodes);
+    if (focused) {
+      const key = focused.dataset.day ?? focused.getAttribute('aria-label') ?? focused.getAttribute('href');
+      [...target.querySelectorAll('a,button')].find(control => (control.dataset.day ?? control.getAttribute('aria-label') ?? control.getAttribute('href')) === key)
+        ?.focus({ preventScroll: true });
+    }
+  }
+}
+
+async function followSales(state, signal) {
+  while (!signal.aborted) {
+    try {
+      const { salesVersion } = await api(`admin/sales-updates?since=${state.data.salesVersion}`, {
+        signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
+      });
+      if (signal.aborted || salesVersion === state.data.salesVersion) continue;
+      const data = await api(adminSalesPath(state), { signal });
+      if (signal.aborted || BigInt(data.salesVersion) <= BigInt(state.data.salesVersion)) continue;
+      state.data = data;
+      renderSalesUpdate(state);
+    } catch (error) {
+      if (signal.aborted) return;
+      if (error.status === 401 || error.status === 403) return navigate(loginUrl('admin'), { replace: true });
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+  }
+}
+
+function syncSalesWatch() {
+  salesWatch?.abort();
+  salesWatch = null;
+  if (!current?.data?.salesVersion || document.hidden) return;
+  salesWatch = new AbortController();
+  followSales(current, salesWatch.signal);
+}
+
 async function loadPage(focus = false) {
   const requestVersion = ++version;
+  salesWatch?.abort();
+  salesWatch = null;
   const state = { ...route(), search: '' };
   root.setAttribute('aria-busy', 'true');
   try {
@@ -307,15 +358,15 @@ async function loadPage(focus = false) {
         if (current?.type !== state.type || current?.kind !== state.kind || !root.querySelector('.workspace-content')) root.innerHTML = shell(state, loader);
         const query = `?month=${state.month}`;
         if (state.type === 'register') state.data = await api(`registers/${state.kind}${query}`);
-        if (state.type === 'overview') state.data = await api(`admin/overview${query}`);
+        if (state.type === 'overview' || state.type === 'detail') state.data = await api(adminSalesPath(state));
         if (state.type === 'branches') state.data = await api('admin/branches');
-        if (state.type === 'detail') state.data = await api(`admin/branches/${state.id}/${state.kind}${query}`);
         if (requestVersion !== version) return;
         const views = { register: registerView, detail: registerView, overview, branches: manageBranches };
         root.innerHTML = shell(state, views[state.type](state));
       }
     }
     current = state;
+    syncSalesWatch();
     const title = root.querySelector('main h1, main h2')?.textContent;
     document.title = `${title ?? 'Sales System'} | Capitalbet`;
     if (focus) root.querySelector('main h1[tabindex], .login-card h2')?.focus({ preventScroll: true });
@@ -478,9 +529,10 @@ async function submitForm(form) {
         revision: Number(revision), values: amountsFor(form, state.kind),
       } });
       if (current === state) {
-        state.data = entry;
+        if (!admin || BigInt(entry.salesVersion) >= BigInt(state.data.salesVersion)) state.data = entry;
         if (form.isConnected) editor.close();
-        root.innerHTML = shell(state, registerView(state));
+        if (admin) renderSalesUpdate(state);
+        else root.innerHTML = shell(state, registerView(state));
         root.querySelector(`[data-day="${day}"]`)?.focus({ preventScroll: true });
       }
       notify('Daily entry saved.');
@@ -613,6 +665,9 @@ document.addEventListener('input', event => {
 window.addEventListener('popstate', () => {
   if (editor.open) editor.close();
   loadPage(true);
+});
+document.addEventListener('visibilitychange', () => {
+  if (!root.hasAttribute('aria-busy')) syncSalesWatch();
 });
 
 loadPage();

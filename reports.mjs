@@ -51,6 +51,6 @@ export function overviewReport(branchRows, entryRows, openingRows) {
   return { totals, branches };
 }
 
-export function notificationPayload(branch, day, kind, balances) {
-  return { branch, day, kind, balances: Object.fromEntries(balances.map(row => [row.kind, Number(row.balance)])) };
+export function notificationPayload(branch, day, kind, balances, movement, updated) {
+  return { branch, day, kind, movement, updated, balances: Object.fromEntries(balances.map(row => [row.kind, Number(row.balance)])) };
 }

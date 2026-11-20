@@ -137,7 +137,7 @@ export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLen
     requireValue(record !== 'missing', 404, 'No entry has been saved for this day.');
     requireValue(record, 409, 'This entry changed in another session. Load the latest entry and try again.');
     if (role === 'staff') wake();
-    return { record, ...await store.register(branchId, kind, month) };
+    return { record, ...await store.register(branchId, kind, month, { includeSalesVersion: role === 'admin' }) };
   }
 
   async function newPin(name, data, previous) {
@@ -257,6 +257,11 @@ export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLen
 
     if (pathname.startsWith('/api/admin/')) {
       await authorize(request, 'admin');
+      if (method === 'GET' && pathname === '/api/admin/sales-updates') {
+        const since = url.searchParams.get('since');
+        requireValue(/^\d{1,19}$/.test(since ?? ''), 400, 'Choose a valid sales version.');
+        return { salesVersion: await store.watchSales(since, request.signal) };
+      }
       if (method === 'GET' && pathname === '/api/admin/overview') return store.overview(monthFrom(url));
       if (method === 'GET' && pathname === '/api/admin/branches') return { branches: await store.managedBranches() };
       if (method === 'POST' && pathname === '/api/admin/branches') {
@@ -275,7 +280,7 @@ export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLen
         const [, id, kind, day] = branchRegister;
         if (method === 'GET' && !day) {
           const branch = await getBranch(id);
-          return { branch: { id: branch.id, name: branch.name }, ...await store.register(branch.id, kind, monthFrom(url)) };
+          return { branch: { id: branch.id, name: branch.name }, ...await store.register(branch.id, kind, monthFrom(url), { includeSalesVersion: true }) };
         }
         if (method === 'PUT' && day) {
           const branch = await getBranch(id);

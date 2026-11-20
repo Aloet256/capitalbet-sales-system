@@ -1,7 +1,7 @@
 -- Set capitalbet_function_url and capitalbet_cron_secret in Supabase Vault before running.
 -- The URL ends with /functions/v1/capitalbet/cron/telegram.
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-CREATE EXTENSION IF NOT EXISTS pg_net;
+CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
+CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
 
 SELECT cron.schedule('capitalbet-telegram-outbox', '* * * * *', $job$
   SELECT net.http_post(

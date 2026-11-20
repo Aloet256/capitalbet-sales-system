@@ -25,9 +25,9 @@ async function listen(options) {
 
 function client(origin, defaults = {}) {
   let cookie;
-  return async (path, { method = 'GET', body, headers = {} } = {}) => {
+  return async (path, { method = 'GET', body, headers = {}, signal } = {}) => {
     const response = await fetch(`${origin}${path}`, {
-      method,
+      method, signal,
       headers: { ...(cookie ? { Cookie: cookie } : {}), ...defaults, ...headers, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -155,6 +155,9 @@ test('closing balances carry across years, empty months and historical correctio
   assert.deepEqual(balances((await read(other, 'slots', '2028-03')).body.totals), [35_000, 0, 35_000]);
 
   const overview = (await admin('/api/admin/overview?month=2028-01')).body;
+  const updates = `/api/admin/sales-updates?since=${overview.salesVersion}`;
+  assert.equal((await staff(updates)).status, 403);
+  const nextSales = admin(updates, { signal: AbortSignal.timeout(3000) });
   assert.deepEqual(balances(overview.totals.slots), [135_000, 40_000, 175_000]);
   assert.deepEqual(balances(overview.totals.live), [-3_000, 0, -3_000]);
   assert.deepEqual(balances(overview.branches.find(row => row.id === branch.id).slots), [100_000, 40_000, 140_000]);
@@ -173,6 +176,8 @@ test('closing balances carry across years, empty months and historical correctio
   assert.equal(corrected.status, 200);
   assert.equal(corrected.body.branch.id, branch.id);
   assert.equal(corrected.body.record.revision, 3);
+  assert.notEqual(corrected.body.salesVersion, overview.salesVersion);
+  assert.deepEqual((await nextSales).body, { salesVersion: corrected.body.salesVersion });
   const detail = (await admin(`/api/admin/branches/${branch.id}/slots?month=2028-03`)).body;
   assert.deepEqual(balances(detail.totals), [170_000, 0, 170_000]);
   assert.deepEqual(balances((await read(staff, 'slots', '2027-12')).body.totals), [0, 130_000, 130_000]);
@@ -274,6 +279,7 @@ test('Supabase schema, sales import, and PostgreSQL application storage', { skip
   assert.equal(overview.totals.slots.balance, 80_000);
   assert.equal(overview.totals.live.balance, -3_000);
   assert.equal((await setup.query('SELECT count(*)::integer AS count FROM capitalbet.entries')).rows[0].count, 2);
+  assert.equal(overview.salesVersion, '1');
 
   const origin = 'https://aloet256.github.io';
   const edgeApi = createApi({ store, pinVault, pinLength: 6, storage: 'supabase', dummyHash: hash, passwordRecovery: false,
@@ -322,6 +328,12 @@ test('Supabase schema, sales import, and PostgreSQL application storage', { skip
   const retry = await store.claimNotification(nextLease, now + 1_000, now + 60_000);
   assert.equal(retry.attempts, 1);
   await store.finishNotification(retry.id, nextLease);
+  const nextSales = store.watchSales(overview.salesVersion, AbortSignal.timeout(4000));
+  for (;;) {
+    const result = await setup.query("SELECT 1 FROM pg_stat_activity WHERE query = 'LISTEN capitalbet_sales' LIMIT 1");
+    if (result.rowCount) break;
+    await Promise.race([nextSales.then(() => { assert.fail('The PostgreSQL listener did not stay open'); }), new Promise(resolve => setTimeout(resolve, 20))]);
+  }
   const correction = await request(`admin/branches/${branch.id}/live/${month}-29`, {
     method: 'PUT', token: adminToken, body: { revision: 1, values: { ...live, totalIn: 25_000 } },
   });
@@ -329,18 +341,21 @@ test('Supabase schema, sales import, and PostgreSQL application storage', { skip
   const corrected = await correction.json();
   assert.equal(corrected.record.revision, 2);
   assert.equal(corrected.totals.balance, 7_000);
+  assert.equal(await nextSales, corrected.salesVersion);
   assert.equal((await setup.query('SELECT count(*)::integer AS count FROM capitalbet.notifications')).rows[0].count, 0);
 });
 
 test('managed branch PINs are admin-only and a saved register queues a Telegram alert', async t => {
-  let deliver;
-  const delivered = new Promise(resolve => { deliver = resolve; });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2028-02-29T20:59:00Z') });
+  const submitted = Promise.withResolvers();
+  const edited = Promise.withResolvers();
+  const deliveries = [submitted, edited];
   const app = await listen({
     local: true, filename: ':memory:', pinVault: createPinVault('ab'.repeat(32)), initialAdminPassword: 'Admin-password-fixture',
     telegram: {
-      token: 'fixture-token', chatId: 'fixture-chat',
+      token: 'fixture-token', chatId: 'fixture-chat', interval: 25,
       fetcher: async (_url, options) => {
-        deliver(JSON.parse(options.body));
+        deliveries.shift()?.resolve(JSON.parse(options.body));
         return Response.json({ ok: true });
       },
     },
@@ -358,13 +373,18 @@ test('managed branch PINs are admin-only and a saved register queues a Telegram 
   assert.equal((await login(staff, branch.id, pin)).status, 200);
   assert.equal((await staff(pinRoute)).status, 403);
   assert.equal((await save(staff, 'live', live)).status, 200);
-  const alert = await Promise.race([delivered, new Promise((_, reject) => {
+  assert.equal((await save(staff, 'live', { ...live, totalIn: 25_000 }, 1)).status, 200);
+  const [firstAlert, secondAlert] = await Promise.race([Promise.all([submitted.promise, edited.promise]), new Promise((_, reject) => {
     const timer = setTimeout(() => reject(new Error('Telegram alert was not delivered')), 1500);
     timer.unref();
   })]);
-  assert.equal(alert.chat_id, 'fixture-chat');
-  assert.match(alert.text, new RegExp(`${branch.name} filled in Live-in-Play figures`));
-  assert.match(alert.text, /Live-in-Play balance: UGX -30/);
+  assert.equal(firstAlert.chat_id, 'fixture-chat');
+  assert.match(firstAlert.text, new RegExp(`${branch.name} · Live-in-Play entry submitted`));
+  assert.match(firstAlert.text, /Daily movement · UGX -30/);
+  assert.match(firstAlert.text, /Live-in-Play · UGX -30/);
+  assert.match(secondAlert.text, /Live-in-Play entry updated/);
+  assert.match(secondAlert.text, /Daily movement · UGX 70/);
+  assert.match(secondAlert.text, /Live-in-Play · UGX 70/);
   assert.equal((await admin(pinRoute, { method: 'PUT', body: {} })).status, 200);
   assert.equal((await read(staff, 'live')).status, 401);
   const replacement = (await admin(pinRoute)).body.pin;
