@@ -253,10 +253,10 @@ function overview(state) {
   const totals = data.totals[kind];
   const reporting = data.branches.filter(branch => branch.entriesByRegister[kind] > 0).length;
   const meta = [
-    ['Closing balance', money(totals.balance), register.icon, kind === 'live' ? 'gold' : 'red'],
-    ['Opening balance', money(totals.openingBalance), 'coins', 'dark'],
-    ['This month’s movement', money(totals.monthlyMovement), 'chart', 'plain'],
-    ['Branches reporting', `${reporting} / ${data.branches.length}`, 'branch', 'plain'],
+    ['ALL BRANCH COLLECTIONS', money(totals.balance), register.icon, kind === 'live' ? 'gold' : 'red'],
+    ['PREVIOUS MONTH TOTAL BALANCE TRANSFERED', money(totals.openingBalance), 'coins', 'dark'],
+    ['This Month Acumulation', money(totals.monthlyMovement), 'chart', 'plain'],
+    ['Branches with entries', `${reporting} / ${data.branches.length}`, 'branch', 'plain'],
   ];
   const fields = fieldList(kind);
   return `${pageHeading(`${register.title} Sales Overview`, 'Review monthly sales figures across all Capitalbet branches.', monthPicker(month))}
