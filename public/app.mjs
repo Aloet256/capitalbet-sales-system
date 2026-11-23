@@ -176,8 +176,11 @@ function dashboard(state) {
     <div class="section-heading"><h2>Sales registers</h2><span>${monthName(state.month)}</span></div><div class="register-card-grid">${options}</div>`;
 }
 
+const totalCashAtHandLabel = 'TOTAL CASH AT HAND';
+const todaysCashAtHandLabel = 'TODAYS CASH AT HAND';
+
 function totalCards(kind, totals) {
-  const balances = [['balance', 'Closing balance'], ['openingBalance', 'Opening balance'], ['monthlyMovement', 'This month’s movement']];
+  const balances = [['balance', totalCashAtHandLabel], ['openingBalance', 'Opening balance'], ['monthlyMovement', 'This month’s movement']];
   const cards = fields => fields.map(([key, label]) => `<div class="total-card ${key === 'balance' ? 'balance-card' : ''}">
     <div class="total-label">${label}</div><div class="total-number ${totals[key] < 0 ? 'negative' : ''}">${salesFigure(totals[key], key)}</div>
   </div>`).join('');
@@ -199,11 +202,11 @@ function entryAction(day, record, staff, currentDay) {
 function registerView(state) {
   const { kind, month, data } = state;
   const staff = state.type === 'register';
-  const fields = [['balance', 'Running Balance'], ['monthlyMovement', 'Daily Movement'], ...registers[kind].fields];
+  const fields = [['balance', 'Running Balance'], ['monthlyMovement', todaysCashAtHandLabel], ...registers[kind].fields];
   const days = daysInMonth(month);
   const currentDay = today();
   const rows = new Map(data.records.map(record => [record.day, record]));
-  const balanceFormula = kind === 'slots' ? 'Daily movement = Total In + Cash In − Total Out − Expenses − Cash Out − Free Coupons' : 'Daily movement = Total In − Total Out';
+  const balanceFormula = kind === 'slots' ? 'Total In + Cash In − Total Out − Expenses − Cash Out − Free Coupons' : 'Total In − Total Out';
   const actions = staff ? `<button class="btn primary" data-action="pick-entry">${icon('plus', 18)} Add entry</button>` : '';
   let runningBalance = data.totals.openingBalance;
   const body = days.map(day => {
@@ -228,7 +231,7 @@ function registerView(state) {
       <div class="table-scroll" tabindex="0" role="region" aria-label="Daily ${registers[kind].title} entries"><table class="register-table ${kind}"><thead><tr><th scope="col">Date</th>${fields.map(([, label]) => `<th scope="col">${label}</th>`).join('')}<th scope="col" class="day-action">Action</th></tr></thead><tbody data-sales-part="rows">${body}</tbody>
       <tfoot data-sales-part="closing"><tr class="opening-total"><th scope="row">Opening balance</th>${salesCell('balance', data.totals.openingBalance)}<td colspan="${fields.length}"></td></tr>
       <tr><th scope="row">Monthly total</th>${fields.map(([key]) => salesCell(key, data.totals[key])).join('')}<td></td></tr></tfoot></table></div>
-      <p class="table-note">${balanceFormula}. Running balance includes the opening balance and daily movement to date.</p>
+      <p class="table-note">${todaysCashAtHandLabel} = ${balanceFormula}. Running balance adds each day’s cash at hand to the opening balance.</p>
     </section>`;
 }
 
@@ -263,7 +266,7 @@ function overview(state) {
     ${registerTabs(kind, month, '/admin')}
     <div class="overview-cards" data-sales-part="totals">${meta.map(([label, value, glyph, theme]) => `<article class="panel overview-card"><span class="metric-icon ${theme}">${icon(glyph, 21)}</span><p>${label}</p><strong>${value}</strong></article>`).join('')}</div>
     <section class="panel table-panel overview-branches"><div class="table-title"><div><h2>Branch sales</h2><p>${monthName(month)}</p></div>${searchInput('Search branches')}</div>
-      <div class="table-scroll" tabindex="0" role="region" aria-label="${register.title} branch sales"><table class="overview-table ${kind}"><thead><tr><th scope="col">Branch</th>${fields.map(([key, label]) => `<th scope="col">${key === 'balance' ? 'Closing Balance' : label}</th>`).join('')}<th scope="col">Details</th></tr></thead>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="${register.title} branch sales"><table class="overview-table ${kind}"><thead><tr><th scope="col">Branch</th>${fields.map(([key, label]) => `<th scope="col">${key === 'balance' ? totalCashAtHandLabel : label}</th>`).join('')}<th scope="col">Details</th></tr></thead>
       <tbody id="branch-rows" data-sales-part="rows">${salesRows(state, state.search)}</tbody><tfoot data-sales-part="closing"><tr><th scope="row">All branches total</th>${fields.map(([key]) => salesCell(key, totals[key])).join('')}<td></td></tr></tfoot></table></div>
     </section>`;
 }
@@ -423,7 +426,7 @@ function entryEditor(day, available) {
   dialogContent(record ? 'Edit daily entry' : 'Add daily entry', `${registers[kind].title} · ${dateName(day)}`,
     `<form data-form="entry" data-day="${day}" data-revision="${record?.revision ?? 0}" data-prior-balance="${priorBalance}" class="stack-form dialog-form">${date}
       <div class="entry-grid">${fields}</div>
-      <div class="entry-movement"><span>Daily movement</span><output data-movement>${money(dailyMovement)}</output></div>
+      <div class="entry-movement"><span>${todaysCashAtHandLabel}</span><output data-movement>${money(dailyMovement)}</output></div>
       <div class="balance-preview"><span>Running balance</span><output data-running-balance>${money(priorBalance + dailyMovement)}</output></div>
       <button type="button" class="row-btn reload-entry" data-action="reload-entry" hidden>Load latest entry</button>${editorActions('Save entry')}</form>`);
   editor.querySelector(available ? '#entry-day' : '.entry-grid input').focus();
