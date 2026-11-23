@@ -239,7 +239,7 @@ function registerView(state) {
 
 function registerTabs(kind, month, path) {
   const href = type => path === '/admin' ? overviewUrl(month, type) : periodUrl(`${path}/${type}`, month);
-  return `<nav class="tabs" aria-label="Sales register">${Object.entries(registers).map(([key, register]) => `<a href="${routeHref(href(key))}" ${key === kind ? 'aria-current="page"' : ''}>${icon(register.icon, 18)}${register.title}</a>`).join('')}</nav>`;
+  return `<nav class="tabs" aria-label="Sales register">${Object.entries(registers).map(([key, register]) => `<a class="${key}" href="${routeHref(href(key))}" ${key === kind ? 'aria-current="page"' : ''}>${icon(register.icon, 18)}${register.title}</a>`).join('')}</nav>`;
 }
 
 function salesRows(state, term = '') {

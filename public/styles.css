@@ -179,9 +179,11 @@ tfoot th, tfoot td { padding-top: .7rem; padding-bottom: .7rem; font-weight: 750
 .row-actions .row-btn + .row-btn { margin-left: .4rem; }
 .back-link { display: inline-block; margin-bottom: .55rem; }
 .tabs { display: flex; gap: .38rem; margin-bottom: .85rem; }
-.tabs a { display: flex; align-items: center; gap: .4rem; padding: .48rem .75rem; color: var(--muted); border-radius: .45rem; font-size: .9375rem; font-weight: 650; }
-.tabs a:hover { background: #eceef3; }
-.tabs a[aria-current] { color: #981a2a; background: #ffe9ec; }
+.tabs .slots { --tab-ink: #981a2a; --tab-tint: var(--red-soft); --tab-highlight: #ffdee3; }
+.tabs .live { --tab-ink: #805100; --tab-tint: #fff3d0; --tab-highlight: #ffe7ab; }
+.tabs a { display: flex; align-items: center; gap: .4rem; padding: .48rem .75rem; color: var(--tab-ink); background: var(--tab-tint); border-radius: .45rem; font-size: .9375rem; font-weight: 650; }
+.tabs a:is(:hover, [aria-current]) { background: var(--tab-highlight); }
+.tabs a[aria-current] { box-shadow: inset 0 0 0 1px currentColor; }
 .compact-sales { display: grid; grid-template-rows: auto 1fr; min-height: 100dvh; }
 .compact-sales .topbar { min-height: 3rem; padding-block: .35rem; }
 .compact-sales .workspace-content { display: flex; flex-direction: column; width: 100%; padding-block: .85rem .75rem; }
