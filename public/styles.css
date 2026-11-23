@@ -292,7 +292,7 @@ dialog::backdrop { background: #171b29a0; }
   .compact-sales .monthly-totals { margin-bottom: .45rem; }
   .compact-sales .section-heading { margin-bottom: .3rem; }
   .compact-sales .monthly-totals .section-heading span { display: none; }
-  .compact-sales .balance-summary { grid-template-columns: 1fr 2fr 1fr; }
+  .compact-sales .balance-summary { grid-template-columns: 1fr 1.8fr 1.4fr; }
   .compact-sales .totals-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .compact-sales .balance-summary .balance-card { grid-column: auto; }
   .compact-sales .total-card { padding: .25rem .35rem; }
@@ -314,7 +314,7 @@ dialog::backdrop { background: #171b29a0; }
   .dialog-heading, .dialog-form { padding-inline: .8rem; }
 }
 @media (max-width: 360px) {
-  .compact-sales .total-card { padding-block: .15rem; }
+  .compact-sales .total-card { padding: .15rem .25rem; }
   .compact-sales .table-scroll { min-height: 5rem; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; } }
