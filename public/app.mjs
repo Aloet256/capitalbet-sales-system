@@ -106,7 +106,7 @@ function shell(state, contents) {
       <div class="sidebar-bottom"><div class="identity"><span class="identity-icon">${icon(admin ? 'shield' : 'branch', 18)}</span><div><strong>${context}</strong><span>${admin ? 'Admin access' : 'Branch staff'}</span></div></div>
       <button type="button" class="signout" data-action="logout">${icon('exit', 19)} Sign out</button></div>
     </aside>
-    <div class="workspace"><header class="topbar"><div class="toppath">
+    <div class="workspace${state.type === 'overview' ? ' overview-workspace' : ''}"><header class="topbar"><div class="toppath">
       <button class="icon-btn menu-toggle" data-action="menu" aria-label="Toggle navigation" aria-controls="sidebar" aria-expanded="false">${icon('menu')}</button>
       <span>${admin ? 'Admin' : 'Staff'}</span><span class="path-divider">/</span><strong>${currentTitle}</strong>
       </div><div class="top-context"><span class="context-name">${icon(admin ? 'shield' : 'branch', 17)} ${context}</span></div></header>
@@ -262,7 +262,7 @@ function overview(state) {
   return `${pageHeading(`${register.title} Sales Overview`, 'Review monthly sales figures across all Capitalbet branches.', monthPicker(month))}
     ${registerTabs(kind, month, '/admin')}
     <div class="overview-cards" data-sales-part="totals">${meta.map(([label, value, glyph, theme]) => `<article class="panel overview-card"><span class="metric-icon ${theme}">${icon(glyph, 21)}</span><p>${label}</p><strong>${value}</strong></article>`).join('')}</div>
-    <section class="panel table-panel"><div class="table-title"><div><h2>Branch sales</h2><p>${monthName(month)}</p></div>${searchInput('Search branches')}</div>
+    <section class="panel table-panel overview-branches"><div class="table-title"><div><h2>Branch sales</h2><p>${monthName(month)}</p></div>${searchInput('Search branches')}</div>
       <div class="table-scroll" tabindex="0" role="region" aria-label="${register.title} branch sales"><table class="overview-table ${kind}"><thead><tr><th scope="col">Branch</th>${fields.map(([key, label]) => `<th scope="col">${key === 'balance' ? 'Closing Balance' : label}</th>`).join('')}<th scope="col">Details</th></tr></thead>
       <tbody id="branch-rows" data-sales-part="rows">${salesRows(state, state.search)}</tbody><tfoot data-sales-part="closing"><tr><th scope="row">All branches total</th>${fields.map(([key]) => salesCell(key, totals[key])).join('')}<td></td></tr></tfoot></table></div>
     </section>`;
@@ -651,7 +651,9 @@ document.addEventListener('input', event => {
   if (event.target.matches('[data-search]')) {
     current.search = event.target.value;
     const rows = current.type === 'overview' ? salesRows : managedRows;
-    root.querySelector('#branch-rows').innerHTML = rows(current, current.search);
+    const branchRows = root.querySelector('#branch-rows');
+    branchRows.innerHTML = rows(current, current.search);
+    if (current.type === 'overview') branchRows.closest('.table-scroll').scrollTop = 0;
   }
   const form = event.target.form;
   if (form?.dataset.form === 'entry') {
