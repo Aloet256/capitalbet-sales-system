@@ -179,6 +179,7 @@ function dashboard(state) {
 
 const totalCashAtHandLabel = 'TOTAL CASH AT HAND';
 const todaysCashAtHandLabel = 'TODAYS CASH AT HAND';
+const missingTicketsMessage = 'Fill in the Number of Tickets';
 
 function salesAmountClass(key, value) {
   if (value < 0) return 'negative';
@@ -431,7 +432,7 @@ function entryEditor(day, available) {
   const date = available ? `<label for="entry-day">Entry date</label><select id="entry-day" name="day">${available.map(value => `<option value="${value}" ${value === day ? 'selected' : ''}>${dateName(value)}</option>`).join('')}</select>` : '';
   const fields = registers[kind].fields.map(([key, label]) => {
     const value = record?.values[key];
-    if (key === 'tickets') return `<label>${label}<input name="${key}" type="number" step="1" min="0" max="1000000000" inputmode="numeric" value="${value ?? ''}" placeholder="0"></label>`;
+    if (key === 'tickets') return `<label>${label}<input name="${key}" type="number" step="1" min="0" max="1000000000" inputmode="numeric" value="${value ?? ''}" required></label>`;
     return `<label>${label}<span class="money-input"><span class="money-prefix">UGX</span><input name="${key}" data-money type="text" inputmode="decimal" maxlength="24" value="${value === undefined ? '' : number(value)}" placeholder="0"></span></label>`;
   }).join('');
   dialogContent(record ? 'Edit daily entry' : 'Add daily entry', `${registers[kind].title} · ${dateName(day)}`,
@@ -461,7 +462,8 @@ function branchEditor(branch) {
 function amountsFor(form, kind) {
   return Object.fromEntries(registers[kind].fields.map(([key]) => {
     const value = form.elements[key].value;
-    return [key, key === 'tickets' ? Number(value) : parseMoneyInput(value)];
+    if (key === 'tickets') return [key, value === '' ? undefined : Number(value)];
+    return [key, parseMoneyInput(value)];
   }));
 }
 
@@ -654,6 +656,14 @@ document.addEventListener('submit', event => {
   submitForm(event.target);
 });
 
+document.addEventListener('invalid', event => {
+  const field = event.target;
+  if (field.name !== 'tickets' || field.form?.dataset.form !== 'entry' || !field.validity.valueMissing || field.validity.badInput) return;
+  event.preventDefault();
+  showError(field.form, missingTicketsMessage);
+  field.focus();
+}, true);
+
 document.addEventListener('change', event => {
   const form = event.target.form;
   if (form?.dataset.form === 'period' && form.checkValidity()) applyPeriod(form);
@@ -670,6 +680,7 @@ document.addEventListener('input', event => {
   }
   const form = event.target.form;
   if (form?.dataset.form === 'entry') {
+    if (event.target.name === 'tickets' && event.target.value && form.querySelector('.form-error').textContent === missingTicketsMessage) showError(form, '');
     if (event.target.matches('[data-money]') && !event.isComposing) formatMoneyField(event.target, event.inputType);
     const { balance } = withBalance(current.kind, amountsFor(form, current.kind));
     form.querySelector('[data-movement]').textContent = Number.isFinite(balance) ? money(balance) : '—';
