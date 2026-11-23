@@ -204,7 +204,7 @@ tfoot th, tfoot td { padding-top: .7rem; padding-bottom: .7rem; font-weight: 750
 .compact-sales .table-panel { display: grid; flex: 1 0 auto; grid-template-rows: auto 1fr; }
 .compact-sales .table-title { padding-block: .45rem; }
 .compact-sales .table-title > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 .65rem; }
-.compact-sales .table-title .btn { flex: none; min-height: 2.25rem; padding: .3rem .65rem; }
+.compact-sales :is(.page-heading, .table-title) .btn { flex: none; min-height: 2.25rem; padding: .3rem .65rem; }
 .compact-sales .table-scroll { contain: size; min-height: clamp(6rem, 18dvh, 8rem); overscroll-behavior-block: contain; scroll-padding-block-start: 2.5rem; }
 .compact-sales thead th { position: sticky; top: 0; z-index: 1; }
 .compact-sales :is(th, td):not(.no-results) { padding-block: .32rem; }
@@ -220,7 +220,7 @@ tfoot th, tfoot td { padding-top: .7rem; padding-bottom: .7rem; font-weight: 750
 .search { position: relative; display: flex; align-items: center; width: min(100%, 16rem); color: var(--muted); }
 .search svg { position: absolute; z-index: 1; left: .65rem; pointer-events: none; }
 .search input { min-height: 2.58rem; padding: .45rem .6rem .45rem 2.1rem; font-size: .9375rem; }
-.overview-branches .search input { min-height: 2.15rem; padding-block: .3rem; }
+.compact-sales .search input { min-height: 2.15rem; padding-block: .3rem; }
 .table-link { color: #811b2a; }
 .branch-row-icon { display: inline-flex; vertical-align: middle; align-items: center; justify-content: center; color: #656d81; border-radius: .35rem; background: #f0f2f6; margin-right: .55rem; width: 1.8rem; height: 1.8rem; }
 .pin-status { display: inline-flex; align-items: center; gap: .33rem; padding: .22rem .46rem; color: #795000; background: #fff2d3; border-radius: .35rem; font-size: .8125rem; font-weight: 650; }
@@ -304,8 +304,8 @@ dialog::backdrop { background: #171b29a0; }
   .compact-sales .table-title { align-items: center; flex-wrap: nowrap; padding: .35rem .7rem; }
   .compact-sales .table-title p { line-height: 1.3; }
   .compact-sales .table-scroll { min-height: 6rem; }
-  .overview-branches .table-title { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .5rem; }
-  .overview-branches .search { justify-self: end; max-width: 10.5rem; }
+  .compact-sales .table-title:has(.search) { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .5rem; }
+  .compact-sales .table-title .search { justify-self: end; max-width: 10.5rem; }
   .overview-card { grid-template-columns: minmax(0, 1fr); padding: .45rem; }
   .overview-card .metric-icon { display: none; }
   .search { width: 100%; }

@@ -90,7 +90,7 @@ function activeLink(href, name, glyph, active) {
 
 function shell(state, contents) {
   const admin = state.role === 'admin';
-  const compactSales = ['overview', 'detail', 'register'].includes(state.type);
+  const compactSales = ['overview', 'detail', 'register', 'branches'].includes(state.type);
   const context = admin ? 'Administrator' : branchName(state.session.branch.name);
   const overview = overviewUrl(state.month, state.kind);
   const links = admin
@@ -710,7 +710,7 @@ document.addEventListener('input', event => {
     const rows = current.type === 'overview' ? salesRows : managedRows;
     const branchRows = root.querySelector('#branch-rows');
     branchRows.innerHTML = rows(current, current.search);
-    if (current.type === 'overview') branchRows.closest('.table-scroll').scrollTop = 0;
+    branchRows.closest('.table-scroll').scrollTop = 0;
   }
   const form = event.target.form;
   if (form?.dataset.form === 'entry') {
