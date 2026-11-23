@@ -50,6 +50,12 @@ function validatedAmounts(kind, values) {
   }));
 }
 
+function validatedBranchName(input) {
+  const name = typeof input === 'string' ? input.trim().replace(/\s+/g, ' ').toUpperCase() : '';
+  requireValue(name.length >= 2 && name.length <= 90 && /[\p{L}\p{N}]/u.test(name) && !/[\p{Cc}\p{Cf}]/u.test(name), 400, 'Enter a branch name between 2 and 90 characters.');
+  return name;
+}
+
 export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLength, storage, dummyHash,
   cookie = '', recoveryCookie = '', local = false, bearer = false, wake = () => {} }) {
   const attempts = new Map();
@@ -76,6 +82,15 @@ export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLen
     if (entry?.until !== until) return;
     if (entry?.tries === 1) attempts.delete(key);
     else if (entry) entry.tries--;
+  }
+
+  async function verifyAdminPassword(password, ip, incorrectStatus = 401) {
+    requireValue(typeof password === 'string' && password.length > 0 && password.length <= 256, 400, 'Enter the administrator password.');
+    const key = `admin:${ip}`;
+    const expiry = await throttle(key, 10);
+    const correct = adminAuth ? await adminAuth.signIn(password) : await matches(password, store.adminHash);
+    requireValue(correct, incorrectStatus, 'The administrator password is incorrect.');
+    await releaseAttempt(key, expiry);
   }
 
   function tokenHash(request, name = cookie) {
@@ -202,7 +217,7 @@ export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLen
     const method = request.method;
     if (method === 'GET' && pathname === '/api/status') return {
       pinLength,
-      managedPins: Boolean(pinVault), passwordRecovery, storage,
+      managedPins: Boolean(pinVault), branchChanges: true, passwordRecovery, storage,
     };
     if (method === 'GET' && pathname === '/api/branches') return { branches: await store.branches() };
     if (method === 'GET' && pathname === '/api/session') return { session: await sessionFor(request) };
@@ -226,12 +241,7 @@ export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLen
 
     if (method === 'POST' && pathname === '/api/login/admin') {
       const data = await readJson(request);
-      requireValue(typeof data.password === 'string' && data.password.length > 0 && data.password.length <= 256, 400, 'Enter the administrator password.');
-      const key = `admin:${ip}`;
-      const expiry = await throttle(key, 10);
-      const correct = adminAuth ? await adminAuth.signIn(data.password) : await matches(data.password, store.adminHash);
-      requireValue(correct, 401, 'The administrator password is incorrect.');
-      await releaseAttempt(key, expiry);
+      await verifyAdminPassword(data.password, ip);
       return login(request, response, 'admin');
     }
 
@@ -266,14 +276,35 @@ export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLen
       if (method === 'GET' && pathname === '/api/admin/branches') return { branches: await store.managedBranches() };
       if (method === 'POST' && pathname === '/api/admin/branches') {
         const data = await readJson(request);
-        const name = typeof data.name === 'string' ? data.name.trim().replace(/\s+/g, ' ').toUpperCase() : '';
-        requireValue(name.length >= 2 && name.length <= 90 && /[\p{L}\p{N}]/u.test(name) && !/[\p{Cc}\p{Cf}]/u.test(name), 400, 'Enter a branch name between 2 and 90 characters.');
+        const name = validatedBranchName(data.name);
         const { hash, cipher } = await newPin(name, data);
         await authorize(request, 'admin');
         const branch = await store.createBranch(name, hash, cipher);
         requireValue(branch, 409, 'A branch with that name already exists.');
         response.statusCode = 201;
         return { branch };
+      }
+      const branchPath = pathname.match(/^\/api\/admin\/branches\/(\d+)$/);
+      if (branchPath && (method === 'PUT' || method === 'DELETE')) {
+        const data = await readJson(request);
+        const branch = await getBranch(branchPath[1]);
+        const stale = 'This branch changed. Refresh Branch Management and try again.';
+        requireValue(data.currentName === branch.name, 409, stale);
+        const name = method === 'PUT' ? validatedBranchName(data.name) : null;
+        await verifyAdminPassword(data.password, ip, 403);
+        await authorize(request, 'admin');
+        if (method === 'DELETE') {
+          requireValue(await store.deleteBranch(branch.id, branch.name), 409, stale);
+          return { deleted: true };
+        }
+        const renamed = await store.renameBranch(branch.id, branch.name, name, current => {
+          if (!current.pin_cipher) return current.pin_cipher;
+          requireValue(pinVault, 503, 'Branch PIN management is temporarily unavailable.');
+          return pinVault.rebind(current.name, name, current.pin_cipher);
+        });
+        requireValue(renamed !== false, 409, stale);
+        requireValue(renamed, 409, 'A branch with that name already exists.');
+        return { branch: renamed };
       }
       const branchRegister = pathname.match(/^\/api\/admin\/branches\/(\d+)\/(slots|live)(?:\/(\d{4}-\d{2}-\d{2}))?$/);
       if (branchRegister) {
@@ -298,7 +329,7 @@ export function createApi({ store, adminAuth, pinVault, passwordRecovery, pinLen
         const previous = pinVault && branch.pin_cipher ? pinVault.reveal(branch.name, branch.pin_cipher) : undefined;
         const { hash, cipher } = await newPin(branch.name, await readJson(request), previous);
         await authorize(request, 'admin');
-        await store.changePin(branch.id, hash, cipher);
+        requireValue(await store.changePin(branch.id, branch.name, hash, cipher), 409, 'This branch changed. Refresh Branch Management and try again.');
         return { updated: true };
       }
     }

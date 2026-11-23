@@ -12,6 +12,7 @@ const paths = {
   exit: '<path d="M14 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9m2-12 4 4-4 4m4-4H9"/>',
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4m10-4v4M3 10h18m-14 4h2m3 0h2m3 0h1"/>',
   edit: '<path d="m14 6 4 4M4 20l4-.8L20 7a2.8 2.8 0 0 0-4-4L4 15z"/>',
+  trash: '<path d="M4 7h16m-2 0-1 13H7L6 7m3 0V4h6v3m-5 4v5m4-5v5"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>',
   close: '<path d="m6 6 12 12M18 6 6 18"/>',

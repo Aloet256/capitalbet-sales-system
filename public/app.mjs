@@ -285,16 +285,20 @@ function overview(state) {
 
 function managedRows(state, term = '') {
   const filtered = state.data.branches.filter(branch => branch.name.toLowerCase().includes(term.toLowerCase().trim()));
-  return filtered.length ? filtered.map(branch => `<tr><th scope="row"><span class="branch-row-icon">${icon('branch', 16)}</span>${branchName(branch.name)}</th>
-    <td><span class="pin-status ${branch.pinSet ? 'set' : ''}">${icon(branch.pinSet ? 'check' : 'lock', 15)} ${branch.pinSet ? 'PIN set' : 'PIN required'}</span></td>
-    <td class="row-actions">${status.managedPins && branch.pinSet ? `<button class="row-btn" data-action="view-pin" data-id="${branch.id}">${icon('eye', 16)} View PIN</button>` : ''}<button class="row-btn" data-action="change-pin" data-id="${branch.id}">${icon('lock', 16)} ${status.managedPins ? 'Reset PIN' : branch.pinSet ? 'Change PIN' : 'Set PIN'}</button></td></tr>`).join('')
+  return filtered.length ? filtered.map(branch => {
+    const name = branchName(branch.name);
+    const changes = status.branchChanges ? `<button class="row-btn" data-action="rename-branch" data-id="${branch.id}" aria-label="Edit ${name}">${icon('edit', 16)} Edit name</button><button class="row-btn danger" data-action="delete-branch" data-id="${branch.id}" aria-label="Delete ${name}">${icon('trash', 16)} Delete</button>` : '';
+    return `<tr><th scope="row"><span class="branch-row-icon">${icon('branch', 16)}</span>${name}</th>
+      <td><span class="pin-status ${branch.pinSet ? 'set' : ''}">${icon(branch.pinSet ? 'check' : 'lock', 15)} ${branch.pinSet ? 'PIN set' : 'PIN required'}</span></td>
+      <td class="row-actions">${status.managedPins && branch.pinSet ? `<button class="row-btn" data-action="view-pin" data-id="${branch.id}">${icon('eye', 16)} View PIN</button>` : ''}<button class="row-btn" data-action="change-pin" data-id="${branch.id}">${icon('lock', 16)} ${status.managedPins ? 'Reset PIN' : branch.pinSet ? 'Change PIN' : 'Set PIN'}</button>${changes}</td></tr>`;
+  }).join('')
     : '<tr><td class="no-results" colspan="3">No branches match your search.</td></tr>';
 }
 
 function manageBranches(state) {
-  return `${pageHeading('Branch Management', 'Add branches and manage staff sign-in PINs.', `<button class="btn primary" data-action="new-branch">${icon('plus', 19)} Add branch</button>`)}
+  return `${pageHeading('Branch Management', 'Manage branch details and staff sign-in PINs.', `<button class="btn primary" data-action="new-branch">${icon('plus', 19)} Add branch</button>`)}
     <section class="panel table-panel"><div class="table-title"><div><h2>Branches</h2><p>${state.data.branches.length} Capitalbet branches</p></div>${searchInput('Search branches', state.search)}</div>
-      <div class="table-scroll" tabindex="0" role="region" aria-label="Branch PIN management"><table class="manage-table"><thead><tr><th scope="col">Branch</th><th scope="col">Staff access</th><th scope="col">Action</th></tr></thead><tbody id="branch-rows">${managedRows(state, state.search)}</tbody></table></div>
+      <div class="table-scroll" tabindex="0" role="region" aria-label="Branch management"><table class="manage-table"><thead><tr><th scope="col">Branch</th><th scope="col">Staff access</th><th scope="col">Action</th></tr></thead><tbody id="branch-rows">${managedRows(state, state.search)}</tbody></table></div>
     </section>`;
 }
 
@@ -306,6 +310,7 @@ function adminSalesPath(state) {
 function renderSalesUpdate(state) {
   const draft = document.createElement('template');
   draft.innerHTML = state.type === 'overview' ? overview(state) : registerView(state);
+  if (state.type === 'detail') root.querySelector('.page-heading p').innerHTML = branchName(state.data.branch.name);
   for (const part of draft.content.querySelectorAll('[data-sales-part]')) {
     const target = root.querySelector(`[data-sales-part="${part.dataset.salesPart}"]`);
     if (target.innerHTML === part.innerHTML) continue;
@@ -333,6 +338,7 @@ async function followSales(state, signal) {
     } catch (error) {
       if (signal.aborted) return;
       if (error.status === 401 || error.status === 403) return navigate(loginUrl('admin'), { replace: true });
+      if (error.status === 404 && state.type === 'detail') return navigate(overviewUrl(state.month, state.kind), { replace: true });
       await new Promise(resolve => setTimeout(resolve, 1500));
     }
   }
@@ -459,6 +465,18 @@ function branchEditor(branch) {
   editor.querySelector(status.managedPins && editing ? 'summary' : 'input').focus();
 }
 
+function branchDetailsEditor(branch, deleting) {
+  const name = branchName(branch.name);
+  const title = deleting ? 'Delete branch' : 'Edit branch name';
+  const summary = deleting ? `${name} and all its sales entries will be permanently deleted.` : name;
+  const nameField = deleting ? '' : `<label for="branch-name">Branch name</label><input id="branch-name" name="name" value="${name}" required minlength="2" maxlength="90">`;
+  dialogContent(title, summary, `<form data-form="${deleting ? 'delete-branch' : 'rename-branch'}" data-id="${branch.id}" class="stack-form dialog-form">
+    <input type="hidden" name="currentName" value="${escapeHtml(branch.name)}">${nameField}
+    <label for="branch-admin-password">Administrator password</label><input id="branch-admin-password" name="password" type="password" autocomplete="current-password" required maxlength="256">
+    ${editorActions(deleting ? 'Delete branch' : 'Save name')}</form>`);
+  editor.querySelector(deleting ? '#branch-admin-password' : '#branch-name').focus();
+}
+
 function amountsFor(form, kind) {
   return Object.fromEntries(registers[kind].fields.map(([key]) => {
     const value = form.elements[key].value;
@@ -508,6 +526,7 @@ function applyPeriod(form) {
 async function submitForm(form) {
   if (form.dataset.form === 'period') return applyPeriod(form);
   const type = form.dataset.form;
+  const branchChange = type === 'rename-branch' || type === 'delete-branch';
   const data = Object.fromEntries(new FormData(form));
   const submit = form.querySelector('button[type="submit"]');
   if (submit.disabled) return;
@@ -551,6 +570,15 @@ async function submitForm(form) {
         root.querySelector(`[data-day="${day}"]`)?.focus({ preventScroll: true });
       }
       notify('Daily entry saved.');
+    } else if (branchChange) {
+      const state = current;
+      const deleting = type === 'delete-branch';
+      await api(`admin/branches/${form.dataset.id}`, { method: deleting ? 'DELETE' : 'PUT', body: data });
+      if (current === state) {
+        if (form.isConnected) editor.close();
+        await loadPage();
+      }
+      notify(deleting ? 'Branch deleted.' : 'Branch name updated.');
     } else {
       if (data.pin !== data.confirmation) throw new Error('The PINs must match.');
       const state = current;
@@ -569,6 +597,10 @@ async function submitForm(form) {
     }
     if (form.isConnected) {
       showError(form, error.message);
+      if (branchChange && error.status === 403) {
+        form.elements.password.value = '';
+        form.elements.password.focus();
+      }
       if (type === 'entry' && error.status === 409) form.querySelector('.reload-entry').hidden = false;
     }
   } finally {
@@ -629,6 +661,8 @@ document.addEventListener('click', async event => {
     case 'edit-entry': return entryEditor(button.dataset.day);
     case 'new-branch': return branchEditor();
     case 'change-pin': return branchEditor(current.data.branches.find(branch => branch.id === Number(button.dataset.id)));
+    case 'rename-branch':
+    case 'delete-branch': return branchDetailsEditor(current.data.branches.find(branch => branch.id === Number(button.dataset.id)), button.dataset.action === 'delete-branch');
     case 'view-pin': {
       const state = current;
       const branch = state.data.branches.find(item => item.id === Number(button.dataset.id));

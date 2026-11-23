@@ -12,7 +12,7 @@ export function createEdgeHandler({ origin, getApi, cronSecret, sendNotification
     if (requester && requester !== origin) return Response.json({ error: 'Open Capitalbet from its GitHub Pages address.' }, { status: 403, headers });
     if (requester) headers.set('Access-Control-Allow-Origin', origin);
     if (request.method === 'OPTIONS') {
-      headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
+      headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       headers.set('Access-Control-Allow-Headers', 'authorization, content-type');
       headers.set('Access-Control-Max-Age', '600');
       return new Response(null, { status: 204, headers });

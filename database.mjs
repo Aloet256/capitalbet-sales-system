@@ -66,9 +66,18 @@ export function openStore(filename, { local, adminHash, initialPinHash, notifyOn
   const setConfig = db.prepare('UPDATE config SET value = ? WHERE key = ?');
   const getBranch = db.prepare('SELECT id, name, pin_hash, pin_cipher FROM branches WHERE id = ?');
   const list = db.prepare('SELECT id, name, pin_hash IS NOT NULL AS pin_set FROM branches ORDER BY name');
-  const addBranch = db.prepare('INSERT INTO branches (name, pin_hash, pin_cipher) VALUES (?, ?, ?)');
+  const addBranch = db.prepare('INSERT INTO branches (name, pin_hash, pin_cipher, id) VALUES (?, ?, ?, ?)');
+  const nextBranchId = db.prepare(`SELECT 1 + MAX(COALESCE(MAX(id), 0),
+    COALESCE((SELECT CAST(value AS INTEGER) FROM config WHERE key = 'last_deleted_branch_id'), 0)) AS id FROM branches`);
+  const rememberDeletedBranch = db.prepare(`INSERT INTO config (key, value) VALUES ('last_deleted_branch_id', ?)
+    ON CONFLICT (key) DO UPDATE SET value = CAST(MAX(CAST(value AS INTEGER), CAST(excluded.value AS INTEGER)) AS TEXT)`);
   const branchByName = db.prepare('SELECT id FROM branches WHERE name = ?');
-  const updatePin = db.prepare('UPDATE branches SET pin_hash = ?, pin_cipher = ? WHERE id = ?');
+  const updateBranchName = db.prepare('UPDATE branches SET name = ?, pin_cipher = ? WHERE id = ?');
+  const removeBranch = db.prepare('DELETE FROM branches WHERE id = ?');
+  const removeBranchEntries = db.prepare('DELETE FROM entries WHERE branch_id = ?');
+  const updateAlertBranch = db.prepare("UPDATE notifications SET payload = json_set(payload, '$.branch', ?) WHERE json_extract(payload, '$.branch') = ?");
+  const removeBranchAlerts = db.prepare("DELETE FROM notifications WHERE json_extract(payload, '$.branch') = ?");
+  const updatePin = db.prepare('UPDATE branches SET pin_hash = ?, pin_cipher = ? WHERE id = ? AND name COLLATE BINARY = ?');
   const unsealed = db.prepare('SELECT id, name FROM branches WHERE pin_cipher IS NULL ORDER BY id');
   const revokeBranch = db.prepare('DELETE FROM sessions WHERE branch_id = ?');
   const revokeAdmins = db.prepare("DELETE FROM sessions WHERE role = 'admin'");
@@ -120,7 +129,7 @@ export function openStore(filename, { local, adminHash, initialPinHash, notifyOn
       if (!adminHash) throw new Error('Set CAPITALBET_INITIAL_ADMIN_PASSWORD before first use of a local database.');
       addConfig.run('mode', mode);
       addConfig.run('admin_hash', adminHash);
-      for (const name of branchNames) addBranch.run(name, initialPinHash, null);
+      for (const name of branchNames) addBranch.run(name, initialPinHash, null, null);
     }
   });
   removeExpired.run(Date.now());
@@ -140,10 +149,9 @@ export function openStore(filename, { local, adminHash, initialPinHash, notifyOn
     unsealedBranches: () => unsealed.all(),
     initializePins(protections) {
       transaction(() => {
-        for (const { id, hash, cipher } of protections) {
+        for (const { id, name, hash, cipher } of protections) {
           if (getBranch.get(id)?.pin_cipher) continue;
-          updatePin.run(hash, cipher, id);
-          revokeBranch.run(id);
+          if (updatePin.run(hash, cipher, id, name).changes) revokeBranch.run(id);
         }
       });
     },
@@ -153,12 +161,44 @@ export function openStore(filename, { local, adminHash, initialPinHash, notifyOn
     createBranch(name, pinHash, cipher = null) {
       return transaction(() => {
         if (branchByName.get(name)) return null;
-        return { id: Number(addBranch.run(name, pinHash, cipher).lastInsertRowid), name, pinSet: true };
+        const { id } = nextBranchId.get();
+        addBranch.run(name, pinHash, cipher, id);
+        return { id, name, pinSet: true };
       });
     },
-    changePin(id, pinHash, cipher = null) {
+    renameBranch(id, currentName, name, rebindPin) {
+      const renamed = transaction(() => {
+        const branch = getBranch.get(id);
+        if (branch?.name !== currentName) return false;
+        const existing = branchByName.get(name);
+        if (existing && existing.id !== id) return null;
+        if (name !== currentName) {
+          updateBranchName.run(name, rebindPin(branch), id);
+          updateAlertBranch.run(name, currentName);
+          advanceSalesVersion.run();
+        }
+        return managedBranch({ id, name, pin_set: branch.pin_hash !== null });
+      });
+      if (renamed && name !== currentName) salesChanges.emit('change');
+      return renamed;
+    },
+    deleteBranch(id, currentName) {
+      const deleted = transaction(() => {
+        if (getBranch.get(id)?.name !== currentName) return false;
+        revokeBranch.run(id);
+        removeBranchEntries.run(id);
+        removeBranchAlerts.run(currentName);
+        rememberDeletedBranch.run(String(id));
+        removeBranch.run(id);
+        advanceSalesVersion.run();
+        return true;
+      });
+      if (deleted) salesChanges.emit('change');
+      return deleted;
+    },
+    changePin(id, name, pinHash, cipher = null) {
       return transaction(() => {
-        if (!updatePin.run(pinHash, cipher, id).changes) return false;
+        if (!updatePin.run(pinHash, cipher, id, name).changes) return false;
         revokeBranch.run(id);
         return true;
       });

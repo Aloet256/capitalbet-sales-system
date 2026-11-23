@@ -49,7 +49,7 @@ export async function createApplication({ filename, local = false, adminPassword
   const store = configuredStore ?? openStore(filename ?? resolve('data', local ? 'demo.sqlite' : 'production.sqlite'), { local, adminHash, initialPinHash, notifyOnSave });
   if (!configuredStore && local && initialAdminPassword && pinVault) store.initializeAdmin(adminHash);
   if (!configuredStore && pinVault) {
-    const protections = await Promise.all(store.unsealedBranches().map(async branch => ({ id: branch.id, ...await pinVault.protect(branch.name) })));
+    const protections = await Promise.all(store.unsealedBranches().map(async branch => ({ ...branch, ...await pinVault.protect(branch.name) })));
     store.initializePins(protections);
   }
   const delivery = startTelegramWorker(store, telegram);

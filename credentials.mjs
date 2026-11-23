@@ -25,20 +25,30 @@ export function createPinVault(keyHex) {
   if (!keyHex) return null;
   if (!/^[\da-f]{64}$/i.test(keyHex)) throw new Error('CAPITALBET_PIN_KEY must be a 32-byte hexadecimal key.');
   const key = Buffer.from(keyHex, 'hex');
+
+  function seal(name, pin) {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv('aes-256-gcm', key, iv);
+    cipher.setAAD(Buffer.from(name));
+    const ciphertext = Buffer.concat([cipher.update(pin, 'utf8'), cipher.final()]);
+    return Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString('base64url');
+  }
+
+  function reveal(name, sealed) {
+    const bytes = Buffer.from(sealed, 'base64url');
+    const decipher = createDecipheriv('aes-256-gcm', key, bytes.subarray(0, 12));
+    decipher.setAAD(Buffer.from(name));
+    decipher.setAuthTag(bytes.subarray(12, 28));
+    return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString('utf8');
+  }
+
   return {
     async protect(name, pin = randomPin()) {
-      const iv = randomBytes(12);
-      const cipher = createCipheriv('aes-256-gcm', key, iv);
-      cipher.setAAD(Buffer.from(name));
-      const ciphertext = Buffer.concat([cipher.update(pin, 'utf8'), cipher.final()]);
-      return { hash: await hashSecret(pin), cipher: Buffer.concat([iv, cipher.getAuthTag(), ciphertext]).toString('base64url') };
+      return { hash: await hashSecret(pin), cipher: seal(name, pin) };
     },
-    reveal(name, sealed) {
-      const bytes = Buffer.from(sealed, 'base64url');
-      const decipher = createDecipheriv('aes-256-gcm', key, bytes.subarray(0, 12));
-      decipher.setAAD(Buffer.from(name));
-      decipher.setAuthTag(bytes.subarray(12, 28));
-      return Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString('utf8');
+    reveal,
+    rebind(name, newName, sealed) {
+      return seal(newName, reveal(name, sealed));
     },
   };
 }

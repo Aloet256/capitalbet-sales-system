@@ -343,6 +343,32 @@ test('Supabase schema, sales import, and PostgreSQL application storage', { skip
   assert.equal(corrected.totals.balance, 7_000);
   assert.equal(await nextSales, corrected.salesVersion);
   assert.equal((await setup.query('SELECT count(*)::integer AS count FROM capitalbet.notifications')).rows[0].count, 0);
+
+  assert.match(preflight.headers.get('Access-Control-Allow-Methods'), /\bDELETE\b/);
+  assert.equal((await save(staff, 'live', live, 0, `${month}-28`)).status, 200);
+  const branchRoute = `admin/branches/${branch.id}`;
+  const renamed = 'RENAMED MIGRATED BRANCH FIXTURE';
+  const renameBody = { currentName: name, name: renamed, password: fixtureAdminPassword };
+  assert.equal((await request(branchRoute, { method: 'PUT', token: adminToken, body: { ...renameBody, password: 'incorrect' } })).status, 403);
+  const duplicate = branches.find(item => item.id !== branch.id);
+  assert.equal((await request(branchRoute, { method: 'PUT', token: adminToken, body: { ...renameBody, name: duplicate.name } })).status, 409);
+  const rename = await request(branchRoute, { method: 'PUT', token: adminToken, body: renameBody });
+  assert.equal(rename.status, 200);
+  assert.deepEqual((await rename.json()).branch, { id: branch.id, name: renamed, pinSet: true });
+  assert.equal((await (await request(`${branchRoute}/pin`, { token: adminToken })).json()).pin, pin);
+  assert.equal((await staff('/api/session')).body.session.branch.name, renamed);
+  assert.equal((await read(staff, 'slots')).body.totals.openingBalance, 80_000);
+  const { rows: [pending] } = await setup.query('SELECT payload FROM capitalbet.notifications');
+  assert.equal(pending.payload.branch, renamed);
+
+  const deleteBody = { currentName: renamed, password: fixtureAdminPassword };
+  const deletion = await request(branchRoute, { method: 'DELETE', token: adminToken, body: deleteBody });
+  assert.equal(deletion.status, 200);
+  assert.deepEqual(await deletion.json(), { deleted: true });
+  assert.equal((await read(staff, 'live')).status, 401);
+  assert.equal((await request(`${branchRoute}/slots?month=${month}`, { token: adminToken })).status, 404);
+  assert.equal((await setup.query('SELECT 1 FROM capitalbet.entries WHERE branch_id = $1', [branch.id])).rowCount, 0);
+  assert.equal((await setup.query('SELECT id FROM capitalbet.notifications')).rowCount, 0);
 });
 
 test('managed branch PINs are admin-only and a saved register queues a Telegram alert', async t => {
@@ -424,4 +450,66 @@ test('administrator password changes require a verified recovery code and revoke
   assert.equal((await admin('/api/admin/branches')).status, 401);
   assert.equal((await adminLogin(admin, 'Previous-password-fixture')).status, 401);
   assert.equal((await adminLogin(admin, newPassword)).status, 200);
+});
+
+test('branch rename and permanent deletion require the current administrator password', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2028-02-29T20:59:00Z') });
+  const directory = await mkdtemp(join(tmpdir(), 'capitalbet-branch-changes-'));
+  const options = { local: true, filename: join(directory, 'database.sqlite'), pinVault: createPinVault('ab'.repeat(32)) };
+  let app = await listen(options);
+  t.after(async () => { await app.stop(); await rm(directory, { recursive: true, force: true }); });
+  let admin = client(app.origin);
+  const staff = client(app.origin);
+  const anonymous = client(app.origin);
+  assert.equal((await adminLogin(admin)).status, 200);
+  const pin = '648321';
+  const originalName = 'CAPITALBET BRANCH CHANGE FIXTURE';
+  const add = { method: 'POST', body: { name: originalName, pin } };
+  const created = await admin('/api/admin/branches', add);
+  assert.equal(created.status, 201);
+  const { id } = created.body.branch;
+  const path = `/api/admin/branches/${id}`;
+  const other = (await anonymous('/api/branches')).body.branches.find(branch => branch.id !== id);
+  assert.equal((await login(staff, id, pin)).status, 200);
+  assert.equal((await save(staff, 'slots', slots)).status, 200);
+  assert.equal((await save(staff, 'live', live)).status, 200);
+
+  const name = 'RENAMED & VERIFIED BRANCH';
+  for (const method of ['PUT', 'DELETE']) {
+    const body = { currentName: originalName, name, password: fixtureAdminPassword };
+    assert.equal((await anonymous(path, { method, body })).status, 401);
+    assert.equal((await staff(path, { method, body })).status, 403);
+    assert.equal((await admin(path, { method, body: { ...body, password: '' } })).status, 400);
+    const rejected = await admin(path, { method, body: { ...body, password: 'incorrect password' } });
+    assert.equal(rejected.status, 403);
+    assert.match(rejected.body.error, /password is incorrect/);
+  }
+  const rename = { method: 'PUT', body: { currentName: originalName, name, password: fixtureAdminPassword } };
+  assert.equal((await admin(path, { ...rename, body: { ...rename.body, name: other.name.toLowerCase() } })).status, 409);
+  assert.deepEqual((await admin(path, rename)).body.branch, { id, name, pinSet: true });
+  assert.equal((await admin(`${path}/pin`)).body.pin, pin);
+  assert.equal((await staff('/api/session')).body.session.branch.name, name);
+  assert.equal((await read(staff, 'slots')).body.totals.balance, 80_000);
+  assert.equal((await read(staff, 'live')).body.totals.balance, -3_000);
+
+  const deletion = { method: 'DELETE', body: { currentName: name, password: fixtureAdminPassword } };
+  assert.equal((await admin(path, { ...deletion, body: { ...deletion.body, currentName: originalName } })).status, 409);
+  assert.deepEqual((await admin(path, deletion)).body, { deleted: true });
+  assert.equal((await admin(`${path}/live?month=${month}`)).status, 404);
+  assert.equal((await read(staff, 'slots')).status, 401);
+  const overview = (await admin(`/api/admin/overview?month=${month}`)).body;
+  assert.ok(overview.branches.some(branch => branch.id === other.id));
+  assert.ok(overview.branches.every(branch => branch.id !== id));
+  assert.equal(overview.totals.slots.balance, 0);
+  assert.equal(overview.totals.live.balance, 0);
+
+  await app.stop();
+  app = await listen(options);
+  admin = client(app.origin);
+  assert.equal((await adminLogin(admin)).status, 200);
+  const reopened = (await admin('/api/admin/branches')).body.branches;
+  assert.ok(reopened.every(branch => branch.id !== id));
+  const replacement = await admin('/api/admin/branches', add);
+  assert.equal(replacement.status, 201);
+  assert.ok(replacement.body.branch.id > id);
 });

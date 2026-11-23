@@ -34,6 +34,11 @@ export async function openPostgresStore(pool, { notifyOnSave = false } = {}) {
     LEFT JOIN capitalbet.branches b ON b.id = s.branch_id WHERE s.token_hash = $1 AND s.expires_at > $2`;
   const lookupSession = (client, token) => first(client, sessionSql, [token, Date.now()]);
   const salesVersion = async client => (await first(client, "SELECT value FROM capitalbet.config WHERE key = 'sales_version'"))?.value ?? '0';
+  const advanceSalesVersion = client => client.query(`WITH updated AS (
+    INSERT INTO capitalbet.config AS counter (key, value) VALUES ('sales_version', '1')
+    ON CONFLICT (key) DO UPDATE SET value = (counter.value::bigint + 1)::text
+    RETURNING value
+  ) SELECT pg_notify('capitalbet_sales', value) FROM updated`);
   const setting = await first(pool, "SELECT value FROM capitalbet.config WHERE key = 'admin_user_id'");
   if (!setting) throw new Error('Run the Supabase setup script before starting the app.');
   const recovery = await first(pool, "SELECT value FROM capitalbet.config WHERE key = 'recovery_ready'");
@@ -49,9 +54,40 @@ export async function openPostgresStore(pool, { notifyOnSave = false } = {}) {
         VALUES ($1,$2,$3) ON CONFLICT (name) DO NOTHING RETURNING id, name, true AS pin_set`, [name, hash, cipher]);
       return branch ? managedBranch(branch) : null;
     },
-    changePin(id, hash, cipher) {
+    async renameBranch(id, currentName, name, rebindPin) {
+      try {
+        return await postgresTransaction(pool, async client => {
+          const branch = await first(client, `${branchSql} FOR UPDATE`, [id]);
+          if (branch?.name !== currentName) return false;
+          if (name !== currentName) {
+            await client.query('UPDATE capitalbet.branches SET name = $2, pin_cipher = $3 WHERE id = $1', [id, name, rebindPin(branch)]);
+            await client.query(`UPDATE capitalbet.notifications SET payload = jsonb_set(payload, '{branch}', to_jsonb($2::text))
+              WHERE payload->>'branch' = $1`, [currentName, name]);
+            await advanceSalesVersion(client);
+          }
+          return managedBranch({ id, name, pin_set: true });
+        });
+      } catch (error) {
+        if (error.code === '23505') return null;
+        throw error;
+      }
+    },
+    deleteBranch(id, currentName) {
       return postgresTransaction(pool, async client => {
-        const changed = await client.query('UPDATE capitalbet.branches SET pin_hash = $1, pin_cipher = $2 WHERE id = $3', [hash, cipher, id]);
+        const branch = await first(client, `${branchSql} FOR UPDATE`, [id]);
+        if (branch?.name !== currentName) return false;
+        await client.query('DELETE FROM capitalbet.sessions WHERE branch_id = $1', [id]);
+        await client.query('DELETE FROM capitalbet.entries WHERE branch_id = $1', [id]);
+        await client.query("DELETE FROM capitalbet.notifications WHERE payload->>'branch' = $1", [currentName]);
+        await client.query('DELETE FROM capitalbet.auth_attempts WHERE key = $1', [`branch:${id}`]);
+        await client.query('DELETE FROM capitalbet.branches WHERE id = $1', [id]);
+        await advanceSalesVersion(client);
+        return true;
+      });
+    },
+    changePin(id, name, hash, cipher) {
+      return postgresTransaction(pool, async client => {
+        const changed = await client.query('UPDATE capitalbet.branches SET pin_hash = $1, pin_cipher = $2 WHERE id = $3 AND name = $4', [hash, cipher, id, name]);
         if (!changed.rowCount) return false;
         await client.query('DELETE FROM capitalbet.sessions WHERE branch_id = $1', [id]);
         return true;
@@ -122,11 +158,7 @@ export async function openPostgresStore(pool, { notifyOnSave = false } = {}) {
           VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (branch_id, kind, day) DO UPDATE
           SET amounts = excluded.amounts, net_balance = excluded.net_balance, revision = excluded.revision`,
           [id, kind, day, JSON.stringify(values), result.balance, revision + 1]);
-        await client.query(`WITH updated AS (
-          INSERT INTO capitalbet.config AS counter (key, value) VALUES ('sales_version', '1')
-          ON CONFLICT (key) DO UPDATE SET value = (counter.value::bigint + 1)::text
-          RETURNING value
-        ) SELECT pg_notify('capitalbet_sales', value) FROM updated`);
+        await advanceSalesVersion(client);
         if (notifyOnSave && role === 'staff') {
           const balances = await rows(client, `SELECT kind, SUM(net_balance) AS balance FROM capitalbet.entries
             WHERE branch_id = $1 AND day <= $2 GROUP BY kind`, [id, day]);
