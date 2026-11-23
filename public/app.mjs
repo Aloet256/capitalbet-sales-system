@@ -90,7 +90,7 @@ function activeLink(href, name, glyph, active) {
 
 function shell(state, contents) {
   const admin = state.role === 'admin';
-  const compactSales = state.type === 'overview' || state.type === 'detail';
+  const compactSales = ['overview', 'detail', 'register'].includes(state.type);
   const context = admin ? 'Administrator' : branchName(state.session.branch.name);
   const overview = overviewUrl(state.month, state.kind);
   const links = admin
@@ -240,8 +240,7 @@ function registerView(state) {
     <section class="panel table-panel"><div class="table-title"><div><h2>Daily entries</h2><p data-sales-part="count">${data.records.length} of ${days.length} days recorded${staff ? ' · Only an administrator can edit locked entries.' : ''}</p></div>${actions}</div>
       <div class="table-scroll" tabindex="0" role="region" aria-label="Daily ${registers[kind].title} entries"><table class="register-table ${kind}"><thead><tr><th scope="col">Date</th>${fields.map(([, label]) => `<th scope="col">${label}</th>`).join('')}<th scope="col" class="day-action">Action</th></tr></thead><tbody data-sales-part="rows">${body}</tbody>
       <tfoot data-sales-part="closing"><tr class="opening-total"><th scope="row">Opening balance</th>${salesCell('balance', data.totals.openingBalance)}<td colspan="${fields.length}"></td></tr>
-      <tr><th scope="row">Monthly total</th>${fields.map(([key]) => salesCell(key, data.totals[key])).join('')}<td></td></tr></tfoot></table>${staff ? '' : note}</div>
-      ${staff ? note : ''}
+      <tr><th scope="row">Monthly total</th>${fields.map(([key]) => salesCell(key, data.totals[key])).join('')}<td></td></tr></tfoot></table>${note}</div>
     </section>`;
 }
 
@@ -546,8 +545,7 @@ async function submitForm(form) {
       if (current === state) {
         if (!admin || BigInt(entry.salesVersion) >= BigInt(state.data.salesVersion)) state.data = entry;
         if (form.isConnected) editor.close();
-        if (admin) renderSalesUpdate(state);
-        else root.innerHTML = shell(state, registerView(state));
+        renderSalesUpdate(state);
         root.querySelector(`[data-day="${day}"]`)?.focus({ preventScroll: true });
       }
       notify('Daily entry saved.');
