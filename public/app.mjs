@@ -180,19 +180,22 @@ function dashboard(state) {
 const totalCashAtHandLabel = 'TOTAL CASH AT HAND';
 const todaysCashAtHandLabel = 'TODAYS CASH AT HAND';
 
+function salesAmountClass(key, value) {
+  if (value < 0) return 'negative';
+  return key === 'balance' && value > 0 ? 'positive' : '';
+}
+
 function totalCards(kind, totals) {
   const balances = [['balance', totalCashAtHandLabel], ['openingBalance', 'Opening balance'], ['monthlyMovement', 'This month’s movement']];
   const cards = fields => fields.map(([key, label]) => `<div class="total-card ${key === 'balance' ? 'balance-card' : ''}">
-    <div class="total-label">${label}</div><div class="total-number ${totals[key] < 0 ? 'negative' : ''}">${salesFigure(totals[key], key)}</div>
+    <div class="total-label">${label}</div><div class="total-number ${salesAmountClass(key, totals[key])}">${salesFigure(totals[key], key)}</div>
   </div>`).join('');
   return `<div class="balance-summary">${cards(balances)}</div><div class="totals-grid">${cards(registers[kind].fields)}</div>`;
 }
 
 function salesCell(key, value) {
   const formatted = value === undefined ? '<span class="empty-value">—</span>' : salesFigure(value, key);
-  const isBalance = key === 'balance';
-  const sign = value < 0 ? 'negative' : isBalance && value > 0 ? 'positive' : '';
-  return `<td class="${isBalance ? 'balance-cell' : ''} ${sign}">${formatted}</td>`;
+  return `<td class="${key === 'balance' ? 'balance-cell' : ''} ${salesAmountClass(key, value)}">${formatted}</td>`;
 }
 
 function entryAction(day, record, staff, currentDay) {
