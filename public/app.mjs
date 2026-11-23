@@ -190,7 +190,9 @@ function totalCards(kind, totals) {
 
 function salesCell(key, value) {
   const formatted = value === undefined ? '<span class="empty-value">—</span>' : salesFigure(value, key);
-  return `<td class="${key === 'balance' ? 'balance-cell' : ''} ${value < 0 ? 'negative' : ''}">${formatted}</td>`;
+  const isBalance = key === 'balance';
+  const sign = value < 0 ? 'negative' : isBalance && value > 0 ? 'positive' : '';
+  return `<td class="${isBalance ? 'balance-cell' : ''} ${sign}">${formatted}</td>`;
 }
 
 function entryAction(day, record, staff, currentDay) {

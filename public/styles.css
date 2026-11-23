@@ -168,6 +168,7 @@ tbody th { font-weight: 620; }
 tbody tr:hover > * { background-color: #fafafd; }
 .current-day th { box-shadow: inset 3px 0 var(--red); }
 .balance-cell { background-color: #fff7f8; color: #801a28; font-weight: 730; }
+.register-table tbody .balance-cell.positive { color: #24553e; }
 td { font-variant-numeric: tabular-nums; }
 .date-day { margin-right: .45rem; font-variant-numeric: tabular-nums; }
 .date-weekday, .empty-value { color: var(--muted); font-weight: 450; }
