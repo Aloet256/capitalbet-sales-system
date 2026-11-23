@@ -4,6 +4,7 @@ const paths = {
   home: '<rect x="3" y="3" width="7" height="7" rx="1.4"/><rect x="14" y="3" width="7" height="7" rx="1.4"/><rect x="3" y="14" width="7" height="7" rx="1.4"/><rect x="14" y="14" width="7" height="7" rx="1.4"/>',
   slots: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M9 5v14m6-14v14M5.5 10.5h1m0 0-1 2.5m6-2.5h1m0 0-1 2.5m6-2.5h1m0 0-1 2.5"/>',
   live: '<path d="M3 12h4l3-7 4 14 3-7h4"/>',
+  back: '<path d="M20 12H4m7-7-7 7 7 7"/>',
   branch: '<path d="M3 9l2-5h14l2 5v2a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0zM5 14v6h14v-6m-9 6v-5h4v5M3 9h18"/>',
   chart: '<path d="M4 4v16h16M8 15l4-4 3 2 5-6"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4m-4 4v2"/>',

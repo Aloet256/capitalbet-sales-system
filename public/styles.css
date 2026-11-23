@@ -78,8 +78,8 @@ select { appearance: none; padding-right: 2.1rem; background-image: url("data:im
 .login-submit { width: 100%; margin-top: .5rem; }
 .form-error { color: #8f1422; background: #fff1f2; border: 1px solid #ffced3; font-size: .875rem; padding: .55rem .65rem; border-radius: .4rem; }
 .login-switch { border-top: 1px solid var(--line); text-align: center; margin-top: 1.25rem; padding-top: 1rem; }
-.login-switch a, .back-link { color: #a51625; font-size: .9375rem; font-weight: 700; }
-.login-switch a:hover, .table-link:hover, .back-link:hover { text-decoration: underline; text-underline-offset: .19em; }
+.login-switch a { color: #a51625; font-size: .9375rem; font-weight: 700; }
+.login-switch a:hover, .table-link:hover { text-decoration: underline; text-underline-offset: .19em; }
 .forgot-link { margin-top: .75rem; text-align: right; font-size: .9375rem; }
 .forgot-link a { color: #a51625; font-weight: 700; }
 .forgot-link a:hover { text-decoration: underline; }
@@ -177,8 +177,8 @@ tfoot th, tfoot td { padding-top: .7rem; padding-bottom: .7rem; font-weight: 750
 .day-action, .row-actions { text-align: right; }
 .entry-locked { color: var(--muted); font-size: .875rem; }
 .row-actions .row-btn + .row-btn { margin-left: .4rem; }
-.back-link { display: inline-block; margin-bottom: .55rem; }
-.tabs { display: flex; gap: .38rem; margin-bottom: .85rem; }
+.tabs { display: flex; flex-wrap: wrap; gap: .38rem; margin-bottom: .85rem; }
+.tabs .register-back { --tab-ink: var(--ink); --tab-tint: var(--white); --tab-highlight: #eef1f6; box-shadow: inset 0 0 0 1px #d8dde6; }
 .tabs .slots { --tab-ink: #981a2a; --tab-tint: var(--red-soft); --tab-highlight: #ffdee3; }
 .tabs .live { --tab-ink: #805100; --tab-tint: #fff3d0; --tab-highlight: #ffe7ab; }
 .tabs a { display: flex; align-items: center; gap: .4rem; padding: .48rem .75rem; color: var(--tab-ink); background: var(--tab-tint); border-radius: .45rem; font-size: .9375rem; font-weight: 650; }
@@ -192,8 +192,6 @@ tfoot th, tfoot td { padding-top: .7rem; padding-bottom: .7rem; font-weight: 750
 .compact-sales .page-heading p { margin-top: .15rem; }
 .compact-sales .tabs { margin-bottom: .5rem; }
 .compact-sales .tabs a { padding-block: .35rem; }
-.register-navigation { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .3rem .65rem; margin-bottom: .5rem; }
-.compact-sales .register-navigation :is(.tabs, .back-link) { margin-bottom: 0; }
 .compact-sales .monthly-totals { margin-bottom: .65rem; }
 .compact-sales .section-heading { margin-bottom: .4rem; }
 .compact-sales :is(.section-heading, .table-title) h2 { font-size: 1.1rem; }
@@ -287,8 +285,8 @@ dialog::backdrop { background: #171b29a0; }
   .compact-sales .page-heading p { font-size: .875rem; line-height: 1.3; }
   .compact-sales:has(.overview-cards) .page-heading p, .overview-branches .table-title p { display: none; }
   .compact-sales .period :is(select, input) { min-height: 1.75rem; }
-  .compact-sales .register-navigation .tabs a { padding-inline: .4rem; }
-  .register-navigation .tabs svg { display: none; }
+  .compact-sales .register-navigation a { padding-inline: .4rem; }
+  .register-navigation :is(.slots, .live) svg { display: none; }
   .compact-sales .monthly-totals { margin-bottom: .45rem; }
   .compact-sales .section-heading { margin-bottom: .3rem; }
   .compact-sales .monthly-totals .section-heading span { display: none; }

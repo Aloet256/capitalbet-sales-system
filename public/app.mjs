@@ -223,8 +223,7 @@ function registerView(state) {
       <td class="day-action">${entryAction(day, record, staff, currentDay)}</td>
     </tr>`;
   }).join('');
-  const navigation = staff ? '' : `<div class="register-navigation">${registerTabs(kind, month, `/admin/branches/${state.id}`)}
-    <a class="back-link" href="${routeHref(overviewUrl(month, kind))}">Sales overview</a></div>`;
+  const navigation = staff ? '' : registerTabs(kind, month, `/admin/branches/${state.id}`);
   const description = staff ? registers[kind].description : branchName(data.branch.name);
   const note = `<p class="table-note">${todaysCashAtHandLabel} = ${balanceFormula}. Running balance adds each day’s cash at hand to the opening balance.</p>`;
   return `${pageHeading(`${registers[kind].title} Monthly Sales Register`, description, monthPicker(month))}${navigation}
@@ -238,8 +237,10 @@ function registerView(state) {
 }
 
 function registerTabs(kind, month, path) {
-  const href = type => path === '/admin' ? overviewUrl(month, type) : periodUrl(`${path}/${type}`, month);
-  return `<nav class="tabs" aria-label="Sales register">${Object.entries(registers).map(([key, register]) => `<a class="${key}" href="${routeHref(href(key))}" ${key === kind ? 'aria-current="page"' : ''}>${icon(register.icon, 18)}${register.title}</a>`).join('')}</nav>`;
+  const onOverview = path === '/admin';
+  const href = type => onOverview ? overviewUrl(month, type) : periodUrl(`${path}/${type}`, month);
+  const back = onOverview ? '' : `<a class="register-back" href="${routeHref(overviewUrl(month, kind))}" aria-label="Back to Sales Overview">${icon('back', 18)}Back</a>`;
+  return `<nav class="tabs${onOverview ? '' : ' register-navigation'}" aria-label="Sales register">${back}${Object.entries(registers).map(([key, register]) => `<a class="${key}" href="${routeHref(href(key))}" ${key === kind ? 'aria-current="page"' : ''}>${icon(register.icon, 18)}${register.title}</a>`).join('')}</nav>`;
 }
 
 function salesRows(state, term = '') {
