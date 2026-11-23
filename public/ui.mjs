@@ -58,7 +58,10 @@ const weekFormat = new Intl.DateTimeFormat('en', { weekday: 'short', timeZone: '
 export const dateName = day => dateFormat.format(new Date(`${day}T00:00:00Z`));
 export const weekday = day => weekFormat.format(new Date(`${day}T00:00:00Z`));
 export const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-export const monthName = month => `${months[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`;
+export function monthName(month, { includeYear = true } = {}) {
+  const name = months[Number(month.slice(5)) - 1];
+  return includeYear ? `${name} ${month.slice(0, 4)}` : name;
+}
 export const logo = `<span class="logo"><img src="${new URL('./capitalbet-logo.png', import.meta.url).pathname}" alt="Capitalbet" width="597" height="321"></span>`;
 export const errorBox = '<p class="form-error" role="alert" hidden></p>';
 export const loader = '<div class="loading" role="status" aria-busy="true"><span></span> Loading…</div>';

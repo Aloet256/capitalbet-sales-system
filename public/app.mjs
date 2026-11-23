@@ -185,11 +185,11 @@ function salesAmountClass(key, value) {
   return key === 'balance' && value > 0 ? 'positive' : '';
 }
 
-function totalCards(kind, totals) {
+function totalCards(kind, month, totals) {
   const balances = [
     ['balance', totalCashAtHandLabel],
     ['openingBalance', 'Opening balance (Cash at Hand Transfered from Previous Month)'],
-    ['monthlyMovement', 'This month’s movement'],
+    ['monthlyMovement', `${monthName(month, { includeYear: false })} ACCUMULATED`],
   ];
   const cards = fields => fields.map(([key, label]) => `<div class="total-card ${key === 'balance' ? 'balance-card' : ''}">
     <div class="total-label">${label}</div><div class="total-number ${salesAmountClass(key, totals[key])}">${salesFigure(totals[key], key)}</div>
@@ -236,7 +236,7 @@ function registerView(state) {
   const description = staff ? registers[kind].description : branchName(data.branch.name);
   const note = `<p class="table-note">${todaysCashAtHandLabel} = ${balanceFormula}. Running balance adds each day’s cash at hand to the opening balance.</p>`;
   return `${pageHeading(`${registers[kind].title} Monthly Sales Register`, description, monthPicker(month))}${navigation}
-    <section class="monthly-totals" data-sales-part="totals"><div class="section-heading"><h2>Monthly totals</h2><span>${monthName(month)}</span></div>${totalCards(kind, data.totals)}</section>
+    <section class="monthly-totals" data-sales-part="totals"><div class="section-heading"><h2>Monthly totals</h2><span>${monthName(month)}</span></div>${totalCards(kind, month, data.totals)}</section>
     <section class="panel table-panel"><div class="table-title"><div><h2>Daily entries</h2><p data-sales-part="count">${data.records.length} of ${days.length} days recorded${staff ? ' · Only an administrator can edit locked entries.' : ''}</p></div>${actions}</div>
       <div class="table-scroll" tabindex="0" role="region" aria-label="Daily ${registers[kind].title} entries"><table class="register-table ${kind}"><thead><tr><th scope="col">Date</th>${fields.map(([, label]) => `<th scope="col">${label}</th>`).join('')}<th scope="col" class="day-action">Action</th></tr></thead><tbody data-sales-part="rows">${body}</tbody>
       <tfoot data-sales-part="closing"><tr class="opening-total"><th scope="row">Opening balance</th>${salesCell('balance', data.totals.openingBalance)}<td colspan="${fields.length}"></td></tr>
