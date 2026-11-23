@@ -186,7 +186,11 @@ function salesAmountClass(key, value) {
 }
 
 function totalCards(kind, totals) {
-  const balances = [['balance', totalCashAtHandLabel], ['openingBalance', 'Opening balance'], ['monthlyMovement', 'This month’s movement']];
+  const balances = [
+    ['balance', totalCashAtHandLabel],
+    ['openingBalance', 'Opening balance (Cash at Hand Transfered from Previous Month)'],
+    ['monthlyMovement', 'This month’s movement'],
+  ];
   const cards = fields => fields.map(([key, label]) => `<div class="total-card ${key === 'balance' ? 'balance-card' : ''}">
     <div class="total-label">${label}</div><div class="total-number ${salesAmountClass(key, totals[key])}">${salesFigure(totals[key], key)}</div>
   </div>`).join('');
