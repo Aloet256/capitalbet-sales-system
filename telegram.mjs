@@ -1,17 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { registers } from './public/sales.mjs';
-import { dateName, money } from './public/ui.mjs';
+import { dateName, escapeHtml, money } from './public/ui.mjs';
 
-export function salesMessage({ branch, day, kind, balances, movement, updated }) {
+export function salesMessage({ branch, day, kind, balances, updated }) {
   const action = updated === undefined ? 'saved' : updated ? 'updated' : 'submitted';
   return [
-    `${branch} · ${registers[kind].title} entry ${action}`,
-    `Entry date · ${dateName(day)}`,
-    ...(movement === undefined ? [] : [`Daily movement · ${money(movement)}`]),
-    '',
-    'Running balances through the entry date',
-    `Slots · ${money(balances.slots ?? 0)}`,
-    `Live-in-Play · ${money(balances.live ?? 0)}`,
+    `🏪 <b>${escapeHtml(branch.toUpperCase())}</b>`,
+    `${updated ? '✏️' : '✅'} ${registers[kind].title} Entry ${action}`,
+    `📅 Entry date · ${dateName(day)}`,
+    `💵 Cash at Hand: ${money(balances[kind] ?? 0)}`,
   ].join('\n');
 }
 
@@ -28,7 +25,7 @@ export async function deliverTelegram(store, { token = '', chatId = '', fetcher 
     try {
       const result = await fetcher(endpoint, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: salesMessage(job.payload) }),
+        body: JSON.stringify({ chat_id: chatId, parse_mode: 'HTML', text: salesMessage(job.payload) }),
         signal: AbortSignal.timeout(10_000),
       });
       const answer = await result.json();

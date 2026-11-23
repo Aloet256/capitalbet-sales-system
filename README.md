@@ -33,7 +33,7 @@ The `capitalbet` function only accepts browser requests from `https://aloet256.g
 
 ### Telegram notifications
 
-Set `CAPITALBET_TELEGRAM_BOT_TOKEN`, `CAPITALBET_TELEGRAM_CHAT_ID`, and a randomly generated `CAPITALBET_CRON_SECRET` in Edge Function Secrets. Create two Supabase Vault secrets for scheduled retries. Set `capitalbet_function_url` to the project URL followed by `/functions/v1/capitalbet/cron/telegram` and `capitalbet_cron_secret` to the same cron secret. Run [the Telegram schedule](supabase/schedule-telegram.sql) in the Supabase SQL Editor. Alerts identify new and updated staff entries, with the daily movement and the running balances through the entry date. Supabase Cron retries pending alerts every minute.
+Set `CAPITALBET_TELEGRAM_BOT_TOKEN`, `CAPITALBET_TELEGRAM_CHAT_ID`, and a randomly generated `CAPITALBET_CRON_SECRET` in Edge Function Secrets. Create two Supabase Vault secrets for scheduled retries. Set `capitalbet_function_url` to the project URL followed by `/functions/v1/capitalbet/cron/telegram` and `capitalbet_cron_secret` to the same cron secret. Run [the Telegram schedule](supabase/schedule-telegram.sql) in the Supabase SQL Editor. Alerts identify new and updated staff entries and show Cash at Hand for the selected register through the entry date. Supabase Cron retries pending alerts every minute.
 
 ## Tests
 

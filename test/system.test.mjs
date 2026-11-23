@@ -347,9 +347,10 @@ test('Supabase schema, sales import, and PostgreSQL application storage', { skip
 
 test('managed branch PINs are admin-only and a saved register queues a Telegram alert', async t => {
   t.mock.timers.enable({ apis: ['Date'], now: new Date('2028-02-29T20:59:00Z') });
+  const earlier = Promise.withResolvers();
   const submitted = Promise.withResolvers();
   const edited = Promise.withResolvers();
-  const deliveries = [submitted, edited];
+  const deliveries = [earlier, submitted, edited];
   const app = await listen({
     local: true, filename: ':memory:', pinVault: createPinVault('ab'.repeat(32)), initialAdminPassword: 'Admin-password-fixture',
     telegram: {
@@ -372,19 +373,23 @@ test('managed branch PINs are admin-only and a saved register queues a Telegram 
   assert.match(pin, /^\d{6}$/);
   assert.equal((await login(staff, branch.id, pin)).status, 200);
   assert.equal((await staff(pinRoute)).status, 403);
+  assert.equal((await save(staff, 'live', { ...live, totalIn: 19_000 }, 0, `${month}-28`)).status, 200);
   assert.equal((await save(staff, 'live', live)).status, 200);
   assert.equal((await save(staff, 'live', { ...live, totalIn: 25_000 }, 1)).status, 200);
-  const [firstAlert, secondAlert] = await Promise.race([Promise.all([submitted.promise, edited.promise]), new Promise((_, reject) => {
+  const [, firstAlert, secondAlert] = await Promise.race([Promise.all([earlier.promise, submitted.promise, edited.promise]), new Promise((_, reject) => {
     const timer = setTimeout(() => reject(new Error('Telegram alert was not delivered')), 1500);
     timer.unref();
   })]);
   assert.equal(firstAlert.chat_id, 'fixture-chat');
-  assert.match(firstAlert.text, new RegExp(`${branch.name} · Live-in-Play entry submitted`));
-  assert.match(firstAlert.text, /Daily movement · UGX -30/);
-  assert.match(firstAlert.text, /Live-in-Play · UGX -30/);
-  assert.match(secondAlert.text, /Live-in-Play entry updated/);
-  assert.match(secondAlert.text, /Daily movement · UGX 70/);
-  assert.match(secondAlert.text, /Live-in-Play · UGX 70/);
+  assert.equal(firstAlert.parse_mode, 'HTML');
+  assert.equal(firstAlert.text, [
+    `🏪 <b>${branch.name.toUpperCase()}</b>`,
+    '✅ Live-in-Play Entry submitted',
+    '📅 Entry date · 29 February 2028',
+    '💵 Cash at Hand: UGX -20',
+  ].join('\n'));
+  assert.match(secondAlert.text, /✏️ Live-in-Play Entry updated/);
+  assert.match(secondAlert.text, /💵 Cash at Hand: UGX 80/);
   assert.equal((await admin(pinRoute, { method: 'PUT', body: {} })).status, 200);
   assert.equal((await read(staff, 'live')).status, 401);
   const replacement = (await admin(pinRoute)).body.pin;
