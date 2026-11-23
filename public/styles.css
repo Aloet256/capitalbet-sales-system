@@ -182,14 +182,30 @@ tfoot th, tfoot td { padding-top: .7rem; padding-bottom: .7rem; font-weight: 750
 .tabs a { display: flex; align-items: center; gap: .4rem; padding: .48rem .75rem; color: var(--muted); border-radius: .45rem; font-size: .9375rem; font-weight: 650; }
 .tabs a:hover { background: #eceef3; }
 .tabs a[aria-current] { color: #981a2a; background: #ffe9ec; }
-.overview-workspace { display: grid; grid-template-rows: auto 1fr; min-height: 100dvh; }
-.overview-workspace .topbar { min-height: 3rem; padding-block: .35rem; }
-.overview-workspace .workspace-content { display: flex; flex-direction: column; width: 100%; padding-block: .85rem .75rem; }
-.overview-workspace .page-heading { gap: .4rem .75rem; margin-bottom: .65rem; }
-.overview-workspace .page-heading h1 { font-size: clamp(1.55rem, 2.5vw, 2.1rem); }
-.overview-workspace .page-heading p { margin-top: .15rem; }
-.overview-workspace .tabs { margin-bottom: .5rem; }
-.overview-workspace .tabs a { padding-block: .35rem; }
+.compact-sales { display: grid; grid-template-rows: auto 1fr; min-height: 100dvh; }
+.compact-sales .topbar { min-height: 3rem; padding-block: .35rem; }
+.compact-sales .workspace-content { display: flex; flex-direction: column; width: 100%; padding-block: .85rem .75rem; }
+.compact-sales .page-heading { gap: .4rem .75rem; margin-bottom: .65rem; }
+.compact-sales .page-heading h1 { font-size: clamp(1.55rem, 2.5vw, 2.1rem); }
+.compact-sales .page-heading p { margin-top: .15rem; }
+.compact-sales .tabs { margin-bottom: .5rem; }
+.compact-sales .tabs a { padding-block: .35rem; }
+.register-navigation { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .3rem .65rem; margin-bottom: .5rem; }
+.compact-sales .register-navigation :is(.tabs, .back-link) { margin-bottom: 0; }
+.compact-sales .monthly-totals { margin-bottom: .65rem; }
+.compact-sales .section-heading { margin-bottom: .4rem; }
+.compact-sales :is(.section-heading, .table-title) h2 { font-size: 1.1rem; }
+.compact-sales :is(.balance-summary, .totals-grid) { gap: .45rem; }
+.compact-sales .balance-summary { margin-bottom: .45rem; }
+.compact-sales .total-card { gap: .1rem; padding: .38rem .65rem; }
+.compact-sales .table-panel { display: grid; flex: 1 0 auto; grid-template-rows: auto 1fr; }
+.compact-sales .table-title { padding-block: .45rem; }
+.compact-sales .table-title > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 .65rem; }
+.compact-sales .table-scroll { contain: size; min-height: clamp(6rem, 18dvh, 8rem); overscroll-behavior-block: contain; scroll-padding-block-start: 2.5rem; }
+.compact-sales thead th { position: sticky; top: 0; z-index: 1; }
+.compact-sales :is(th, td):not(.no-results) { padding-block: .32rem; }
+.compact-sales .row-btn { min-height: 1.85rem; padding-block: .15rem; }
+.compact-sales .table-note { position: sticky; left: 0; padding-block: .5rem; }
 .overview-cards { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: .65rem; }
 .overview-card { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .13rem .55rem; padding: .55rem .65rem; }
 .overview-card p { align-self: end; color: var(--muted); font-size: .8125rem; line-height: 1.25; overflow-wrap: anywhere; }
@@ -197,14 +213,6 @@ tfoot th, tfoot td { padding-top: .7rem; padding-bottom: .7rem; font-weight: 750
 .metric-icon { grid-row: span 2; align-self: center; width: 1.9rem; height: 1.9rem; border-radius: .48rem; }
 .metric-icon.dark { color: #fff; background: #393343; }
 .metric-icon.plain { color: #414d63; background: #eef1f6; }
-.overview-branches { display: grid; flex: 1 0 auto; grid-template-rows: auto 1fr; }
-.overview-branches .table-title { padding-block: .45rem; }
-.overview-branches .table-title > div:first-child { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 .65rem; }
-.overview-branches .table-title h2 { font-size: 1.1rem; }
-.overview-branches .table-scroll { contain: size; min-height: 8rem; overscroll-behavior-block: contain; scroll-padding-block-start: 2.5rem; }
-.overview-table thead th { position: sticky; top: 0; z-index: 1; }
-.overview-table :is(th, td):not(.no-results) { padding-block: .32rem; }
-.overview-table .row-btn { min-height: 1.85rem; padding-block: .15rem; }
 .search { position: relative; display: flex; align-items: center; width: min(100%, 16rem); color: var(--muted); }
 .search svg { position: absolute; z-index: 1; left: .65rem; pointer-events: none; }
 .search input { min-height: 2.58rem; padding: .45rem .6rem .45rem 2.1rem; font-size: .9375rem; }
@@ -263,7 +271,7 @@ dialog::backdrop { background: #171b29a0; }
   .menu-open .sidebar { display: flex; }
   .menu-toggle { display: inline-flex; }
   .topbar { min-height: 3.6rem; padding: .35rem .7rem; position: sticky; top: 0; z-index: 3; }
-  .overview-workspace .topbar { min-height: 3.6rem; }
+  .compact-sales .topbar { min-height: 3.6rem; }
   .toppath { gap: .35rem; }
   .top-context .context-name { display: none; }
   .workspace-content { padding-top: 1.25rem; }
@@ -272,8 +280,23 @@ dialog::backdrop { background: #171b29a0; }
 @media (max-width: 470px) {
   .register-card-grid { grid-template-columns: 1fr; }
   .table-title { align-items: start; flex-wrap: wrap; }
-  .overview-workspace .page-heading h1 { font-size: 1.4rem; }
-  .overview-workspace .page-heading p, .overview-branches .table-title p { display: none; }
+  .compact-sales .workspace-content { padding-block: .55rem .45rem; }
+  .compact-sales .page-heading h1 { font-size: 1.4rem; }
+  .compact-sales .page-heading p { font-size: .875rem; line-height: 1.3; }
+  .compact-sales:has(.overview-cards) .page-heading p, .overview-branches .table-title p { display: none; }
+  .compact-sales .period :is(select, input) { min-height: 1.75rem; }
+  .compact-sales .register-navigation .tabs a { padding-inline: .4rem; }
+  .register-navigation .tabs svg { display: none; }
+  .compact-sales .monthly-totals { margin-bottom: .45rem; }
+  .compact-sales .section-heading { margin-bottom: .3rem; }
+  .compact-sales .monthly-totals .section-heading span { display: none; }
+  .compact-sales :is(.balance-summary, .totals-grid) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .compact-sales .balance-summary .balance-card { grid-column: auto; }
+  .compact-sales .total-card { padding: .25rem .35rem; }
+  .compact-sales .total-label { font-size: .75rem; line-height: 1.15; overflow-wrap: anywhere; }
+  .compact-sales .total-number { font-size: .875rem; line-height: 1.2; }
+  .compact-sales .table-title { padding-block: .35rem; }
+  .compact-sales .table-scroll { min-height: 6rem; }
   .overview-branches .table-title { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .5rem; }
   .overview-branches .search { justify-self: end; max-width: 10.5rem; }
   .overview-card { grid-template-columns: minmax(0, 1fr); padding: .45rem; }

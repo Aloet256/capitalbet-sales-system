@@ -90,6 +90,7 @@ function activeLink(href, name, glyph, active) {
 
 function shell(state, contents) {
   const admin = state.role === 'admin';
+  const compactSales = state.type === 'overview' || state.type === 'detail';
   const context = admin ? 'Administrator' : branchName(state.session.branch.name);
   const overview = overviewUrl(state.month, state.kind);
   const links = admin
@@ -106,7 +107,7 @@ function shell(state, contents) {
       <div class="sidebar-bottom"><div class="identity"><span class="identity-icon">${icon(admin ? 'shield' : 'branch', 18)}</span><div><strong>${context}</strong><span>${admin ? 'Admin access' : 'Branch staff'}</span></div></div>
       <button type="button" class="signout" data-action="logout">${icon('exit', 19)} Sign out</button></div>
     </aside>
-    <div class="workspace${state.type === 'overview' ? ' overview-workspace' : ''}"><header class="topbar"><div class="toppath">
+    <div class="workspace${compactSales ? ' compact-sales' : ''}"><header class="topbar"><div class="toppath">
       <button class="icon-btn menu-toggle" data-action="menu" aria-label="Toggle navigation" aria-controls="sidebar" aria-expanded="false">${icon('menu')}</button>
       <span>${admin ? 'Admin' : 'Staff'}</span><span class="path-divider">/</span><strong>${currentTitle}</strong>
       </div><div class="top-context"><span class="context-name">${icon(admin ? 'shield' : 'branch', 17)} ${context}</span></div></header>
@@ -222,16 +223,17 @@ function registerView(state) {
       <td class="day-action">${entryAction(day, record, staff, currentDay)}</td>
     </tr>`;
   }).join('');
-  const back = staff ? '' : `<a class="back-link" href="${routeHref(overviewUrl(month, kind))}">Sales overview</a>`;
-  const tabs = staff ? '' : registerTabs(kind, month, `/admin/branches/${state.id}`);
+  const navigation = staff ? '' : `<div class="register-navigation">${registerTabs(kind, month, `/admin/branches/${state.id}`)}
+    <a class="back-link" href="${routeHref(overviewUrl(month, kind))}">Sales overview</a></div>`;
   const description = staff ? registers[kind].description : branchName(data.branch.name);
-  return `${back}${pageHeading(`${registers[kind].title} Monthly Sales Register`, description, monthPicker(month))}${tabs}
+  const note = `<p class="table-note">${todaysCashAtHandLabel} = ${balanceFormula}. Running balance adds each day’s cash at hand to the opening balance.</p>`;
+  return `${pageHeading(`${registers[kind].title} Monthly Sales Register`, description, monthPicker(month))}${navigation}
     <section class="monthly-totals" data-sales-part="totals"><div class="section-heading"><h2>Monthly totals</h2><span>${monthName(month)}</span></div>${totalCards(kind, data.totals)}</section>
     <section class="panel table-panel"><div class="table-title"><div><h2>Daily entries</h2><p data-sales-part="count">${data.records.length} of ${days.length} days recorded${staff ? ' · Only an administrator can edit locked entries.' : ''}</p></div>${actions}</div>
       <div class="table-scroll" tabindex="0" role="region" aria-label="Daily ${registers[kind].title} entries"><table class="register-table ${kind}"><thead><tr><th scope="col">Date</th>${fields.map(([, label]) => `<th scope="col">${label}</th>`).join('')}<th scope="col" class="day-action">Action</th></tr></thead><tbody data-sales-part="rows">${body}</tbody>
       <tfoot data-sales-part="closing"><tr class="opening-total"><th scope="row">Opening balance</th>${salesCell('balance', data.totals.openingBalance)}<td colspan="${fields.length}"></td></tr>
-      <tr><th scope="row">Monthly total</th>${fields.map(([key]) => salesCell(key, data.totals[key])).join('')}<td></td></tr></tfoot></table></div>
-      <p class="table-note">${todaysCashAtHandLabel} = ${balanceFormula}. Running balance adds each day’s cash at hand to the opening balance.</p>
+      <tr><th scope="row">Monthly total</th>${fields.map(([key]) => salesCell(key, data.totals[key])).join('')}<td></td></tr></tfoot></table>${staff ? '' : note}</div>
+      ${staff ? note : ''}
     </section>`;
 }
 
