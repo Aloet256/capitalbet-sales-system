@@ -149,15 +149,16 @@ export async function openPostgresStore(pool, { notifyOnSave = false } = {}) {
         const branch = await first(client, `${branchSql} FOR UPDATE`, [id]);
         const session = branch && await lookupSession(client, sessionHash);
         if (!session || session.role !== role || (role === 'staff' && session.branch_id !== id)) return false;
-        const entry = await first(client, 'SELECT revision FROM capitalbet.entries WHERE branch_id = $1 AND kind = $2 AND day = $3', [id, kind, day]);
+        const entry = await first(client, 'SELECT revision, amounts FROM capitalbet.entries WHERE branch_id = $1 AND kind = $2 AND day = $3', [id, kind, day]);
         if (role === 'staff' && entry && day < today()) return 'locked';
         if (role === 'admin' && !entry) return 'missing';
         if ((entry?.revision ?? 0) !== revision) return null;
-        const result = withBalance(kind, values);
+        const amounts = kind === 'live' && entry ? { ...entry.amounts, ...values } : values;
+        const result = withBalance(kind, amounts);
         await client.query(`INSERT INTO capitalbet.entries (branch_id, kind, day, amounts, net_balance, revision)
           VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (branch_id, kind, day) DO UPDATE
           SET amounts = excluded.amounts, net_balance = excluded.net_balance, revision = excluded.revision`,
-          [id, kind, day, JSON.stringify(values), result.balance, revision + 1]);
+          [id, kind, day, JSON.stringify(amounts), result.balance, revision + 1]);
         await advanceSalesVersion(client);
         if (notifyOnSave && role === 'staff') {
           const balances = await rows(client, `SELECT kind, SUM(net_balance) AS balance FROM capitalbet.entries

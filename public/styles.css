@@ -157,8 +157,7 @@ select { appearance: none; padding-right: 2.1rem; background-image: url("data:im
 .table-scroll { overflow: auto; overscroll-behavior-inline: contain; }
 .table-scroll:focus-visible { outline-offset: -3px; }
 table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: .875rem; text-align: left; }
-.register-table.slots, .overview-table.slots { min-width: 49rem; }
-.register-table.live, .overview-table.live { min-width: 33rem; }
+.register-table, .overview-table { min-width: 49rem; }
 .manage-table { min-width: 29rem; }
 th, td { padding: .52rem .7rem; border-bottom: 1px solid #edf0f4; white-space: nowrap; }
 th:first-child, td:first-child { padding-left: 1.05rem; }

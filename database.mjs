@@ -102,7 +102,7 @@ export function openStore(filename, { local, adminHash, initialPinHash, notifyOn
     SELECT branch_id, kind, SUM(entry_balance(kind, amounts)) AS balance FROM entries
     WHERE day < ? GROUP BY branch_id, kind
   `);
-  const entryVersion = db.prepare('SELECT revision FROM entries WHERE branch_id = ? AND kind = ? AND day = ?');
+  const savedEntry = db.prepare('SELECT revision, amounts FROM entries WHERE branch_id = ? AND kind = ? AND day = ?');
   const writeEntry = db.prepare(`
     INSERT INTO entries (branch_id, kind, day, amounts, revision) VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(branch_id, kind, day) DO UPDATE SET amounts = excluded.amounts, revision = excluded.revision
@@ -227,13 +227,14 @@ export function openStore(filename, { local, adminHash, initialPinHash, notifyOn
       const saved = transaction(() => {
         const session = sessionHash && getSession.get(sessionHash, Date.now());
         if (!session || session.role !== role || (role === 'staff' && session.branch_id !== id)) return false;
-        const entry = entryVersion.get(id, kind, day);
+        const entry = savedEntry.get(id, kind, day);
         if (role === 'staff' && entry && day < today()) return 'locked';
         if (role === 'admin' && !entry) return 'missing';
         if ((entry?.revision ?? 0) !== revision) return null;
-        writeEntry.run(id, kind, day, JSON.stringify(values), revision + 1);
+        const amounts = kind === 'live' && entry ? { ...JSON.parse(entry.amounts), ...values } : values;
+        writeEntry.run(id, kind, day, JSON.stringify(amounts), revision + 1);
         advanceSalesVersion.run();
-        const result = withBalance(kind, values);
+        const result = withBalance(kind, amounts);
         if (notifyOnSave && role === 'staff') {
           const payload = notificationPayload(session.branch_name, day, kind, branchBalances.all(id, day), result.balance, Boolean(entry));
           queueNotification.run(JSON.stringify(payload), Date.now());

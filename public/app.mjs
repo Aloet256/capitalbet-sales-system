@@ -217,7 +217,9 @@ function registerView(state) {
   const days = daysInMonth(month);
   const currentDay = today();
   const rows = new Map(data.records.map(record => [record.day, record]));
-  const balanceFormula = kind === 'slots' ? 'Total In + Cash In − Total Out − Expenses − Cash Out − Free Coupons' : 'Total In − Total Out';
+  const balanceFormula = kind === 'slots'
+    ? 'Total In + Cash In − Total Out − Expenses − Cash Out − Free Coupons'
+    : 'Total In + Cash In − Total Out − Cash Out − Free Coupons';
   const actions = staff ? `<button class="btn primary" data-action="pick-entry">${icon('plus', 18)} Add entry</button>` : '';
   let runningBalance = data.totals.openingBalance;
   const body = days.map(day => {

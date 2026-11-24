@@ -42,12 +42,16 @@ function monthFrom(url) {
 
 function validatedAmounts(kind, values) {
   requireValue(values && typeof values === 'object' && !Array.isArray(values), 400, 'Enter the sales amounts.');
-  return Object.fromEntries(registers[kind].fields.map(([key, label]) => {
+  const amounts = {};
+  for (const [key, label] of registers[kind].fields) {
     const value = values[key];
+    // Older Live-in-Play clients omit these fields. Keep the saved amounts in that case.
+    if (value === undefined && kind === 'live' && ['cashIn', 'cashOut', 'freeCoupons'].includes(key)) continue;
     const limit = key === 'tickets' ? 1_000_000_000 : 99_999_999_999;
     requireValue(Number.isSafeInteger(value) && value >= 0 && value <= limit, 400, `Enter a valid value for ${label}.`);
-    return [key, value];
-  }));
+    amounts[key] = value;
+  }
+  return amounts;
 }
 
 function validatedBranchName(input) {

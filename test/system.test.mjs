@@ -40,6 +40,7 @@ function client(origin, defaults = {}) {
 const month = '2028-02';
 const slots = { totalIn: 100_000, totalOut: 24_000, expenses: 4_000, cashIn: 12_000, cashOut: 3_000, freeCoupons: 1_000 };
 const live = { totalIn: 15_000, totalOut: 18_000, tickets: 4 };
+const liveCash = { cashIn: 9_000, cashOut: 1_200, freeCoupons: 350 };
 const fixtureAdminPassword = 'Capitalbet-admin-fixture';
 const login = (session, branchId, pin = '1234') => session('/api/login/staff', { method: 'POST', body: { branchId, pin } });
 const adminLogin = (session, password = fixtureAdminPassword) => session('/api/login/admin', { method: 'POST', body: { password } });
@@ -82,14 +83,20 @@ test('staff and administrator flows with persistent and isolated registers', asy
   assert.equal(daysInMonth('2026-12').length, 31);
   assert.equal((await save(staff, 'slots', slots, 0, '2026-02-29')).status, 400);
   assert.equal((await save(staff, 'live', { ...live, tickets: 4.5 })).status, 400);
+  assert.equal((await save(staff, 'live', { ...live, cashOut: -1 })).status, 400);
   assert.equal((await save(staff, 'slots', slots)).body.record.values.balance, 80_000);
-  assert.equal((await save(staff, 'live', live)).body.record.values.balance, -3_000);
+  assert.deepEqual((await save(staff, 'live', live)).body.record.values, {
+    ...live, cashIn: 0, cashOut: 0, freeCoupons: 0, balance: -3_000,
+  });
+  const liveWithCash = { ...live, ...liveCash, balance: 4_450 };
+  assert.deepEqual((await save(staff, 'live', { ...live, ...liveCash }, 1)).body.record.values, liveWithCash);
+  assert.deepEqual((await save(staff, 'live', live, 2)).body.record.values, liveWithCash);
   const concurrent = await Promise.all([save(staff, 'slots', slots, 1), save(staff, 'slots', slots, 1)]);
   assert.deepEqual(concurrent.map(result => result.status).sort(), [200, 409]);
   assert.deepEqual((await read(other, 'slots')).body.records, []);
   const snapshot = (await admin(`/api/admin/overview?month=${month}`)).body;
   assert.deepEqual(snapshot.totals.slots, { balance: 80_000, ...slots, openingBalance: 0, monthlyMovement: 80_000 });
-  assert.deepEqual(snapshot.totals.live, { balance: -3_000, ...live, openingBalance: 0, monthlyMovement: -3_000 });
+  assert.deepEqual(snapshot.totals.live, { ...liveWithCash, openingBalance: 0, monthlyMovement: 4_450 });
   assert.equal(snapshot.branches.find(branch => branch.id === branches[0].id).entries, 2);
   assert.deepEqual(snapshot.branches.find(branch => branch.id === branches[0].id).entriesByRegister, { slots: 1, live: 1 });
   const detail = (await admin(`/api/admin/branches/${branches[0].id}/slots?month=${month}`)).body;
@@ -116,7 +123,7 @@ test('staff and administrator flows with persistent and isolated registers', asy
   const afterRestart = client(app.origin);
   assert.equal((await login(afterRestart, branches[0].id, '5294')).status, 200);
   assert.equal((await read(afterRestart, 'live')).body.totals.tickets, 4);
-  assert.equal((await read(afterRestart, 'live', '2028-03')).body.totals.openingBalance, -3_000);
+  assert.equal((await read(afterRestart, 'live', '2028-03')).body.totals.openingBalance, 4_450);
   assert.equal((await afterRestart('/api/branches')).body.branches.length, 54);
 });
 
@@ -273,11 +280,12 @@ test('Supabase schema, sales import, and PostgreSQL application storage', { skip
   assert.equal((await login(staff, branch.id, pin)).status, 200);
   assert.equal((await adminLogin(admin)).status, 200);
   assert.equal((await read(staff, 'slots')).body.totals.openingBalance, 80_000);
-  const saves = await Promise.all([save(staff, 'live', live), save(staff, 'live', live)]);
+  const liveAmounts = { ...live, ...liveCash };
+  const saves = await Promise.all([save(staff, 'live', liveAmounts), save(staff, 'live', liveAmounts)]);
   assert.deepEqual(saves.map(result => result.status).sort(), [200, 409]);
   const overview = (await admin(`/api/admin/overview?month=${month}`)).body;
   assert.equal(overview.totals.slots.balance, 80_000);
-  assert.equal(overview.totals.live.balance, -3_000);
+  assert.deepEqual(overview.totals.live, { ...liveAmounts, balance: 4_450, openingBalance: 0, monthlyMovement: 4_450 });
   assert.equal((await setup.query('SELECT count(*)::integer AS count FROM capitalbet.entries')).rows[0].count, 2);
   assert.equal(overview.salesVersion, '1');
 
@@ -321,7 +329,7 @@ test('Supabase schema, sales import, and PostgreSQL application storage', { skip
 
   const lease = crypto.randomUUID();
   const notification = await store.claimNotification(lease, now, now + 60_000);
-  assert.deepEqual(notification.payload.balances, { slots: 80_000, live: -3_000 });
+  assert.deepEqual(notification.payload.balances, { slots: 80_000, live: 4_450 });
   await store.finishNotification(notification.id, lease, now + 1_000);
   const nextLease = crypto.randomUUID();
   assert.equal(await store.claimNotification(nextLease, now, now + 60_000), undefined);
@@ -340,7 +348,8 @@ test('Supabase schema, sales import, and PostgreSQL application storage', { skip
   assert.equal(correction.status, 200);
   const corrected = await correction.json();
   assert.equal(corrected.record.revision, 2);
-  assert.equal(corrected.totals.balance, 7_000);
+  assert.deepEqual(corrected.record.values, { ...liveAmounts, totalIn: 25_000, balance: 14_450 });
+  assert.equal((await read(staff, 'live', '2028-03')).body.totals.openingBalance, 14_450);
   assert.equal(await nextSales, corrected.salesVersion);
   assert.equal((await setup.query('SELECT count(*)::integer AS count FROM capitalbet.notifications')).rows[0].count, 0);
 

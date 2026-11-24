@@ -1,16 +1,23 @@
+const cashFields = [
+  ['cashIn', 'Cash In'], ['cashOut', 'Cash Out'], ['freeCoupons', 'Free Coupons'],
+];
+
 export const registers = {
   slots: {
     title: 'Slots', icon: 'slots',
     description: 'Record and review daily slots sales, cash movements, expenses and free coupons.',
     fields: [
       ['totalIn', 'Total In'], ['totalOut', 'Total Out'], ['expenses', 'Expenses'],
-      ['cashIn', 'Cash In'], ['cashOut', 'Cash Out'], ['freeCoupons', 'Free Coupons'],
+      ...cashFields,
     ],
   },
   live: {
     title: 'Live-in-Play', icon: 'live',
-    description: 'Record and review live-in-play sales and the number of tickets made each day.',
-    fields: [['totalIn', 'Total In'], ['totalOut', 'Total Out'], ['tickets', 'Number of Tickets Made']],
+    description: 'Record and review daily live-in-play sales, tickets, cash movements and free coupons.',
+    fields: [
+      ['totalIn', 'Total In'], ['totalOut', 'Total Out'], ['tickets', 'Number of Tickets Made'],
+      ...cashFields,
+    ],
   },
 };
 
@@ -30,10 +37,10 @@ export function daysInMonth(month) {
 }
 
 export function withBalance(type, values) {
-  const balance = type === 'slots'
-    ? values.totalIn + values.cashIn - values.totalOut - values.expenses - values.cashOut - values.freeCoupons
-    : values.totalIn - values.totalOut;
-  return { ...values, balance };
+  const { totalIn, totalOut, cashIn = 0, cashOut = 0, freeCoupons = 0 } = values;
+  const expenses = type === 'slots' ? values.expenses : 0;
+  const balance = totalIn + cashIn - totalOut - expenses - cashOut - freeCoupons;
+  return { ...values, cashIn, cashOut, freeCoupons, balance };
 }
 
 export function emptyTotals(type) {
